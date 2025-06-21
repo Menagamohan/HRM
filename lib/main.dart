@@ -439,6 +439,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String? gifAsset;
   late final GifController controller1;
   String? roleType;
+  int? pendingCount;
+  int? approverCount;
+  int? rejectedCount;
 
   // in your HomePage class
   ConfettiController? _confettiController;
@@ -457,6 +460,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ConfettiController(duration: const Duration(seconds: 15));
     checkIfTodayIsMyBirthday();
     checkApprover();
+    checkPending();
     controller1 = GifController(vsync: this);
     Future.delayed(const Duration(seconds: 1), () async {
       await fetchUser();
@@ -473,6 +477,90 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       roleType = role;
     });
   }
+
+  Widget buildBoxItem(
+      BuildContext context,
+      String imagePath,
+      String label,
+      Widget page, {
+        int leaveEntries = 0, // Default value
+      }) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => page),
+        );
+      },
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                height: 60,
+                width: 60,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[200],
+                ),
+                child: Image.asset(imagePath),
+              ),
+              if (leaveEntries > 0)
+                Positioned(
+                  right: 2,
+                  top: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                    child: Center(
+                      child: Text(
+                        '$leaveEntries',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+Future<void> checkPending() async {
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('apiToken');
+  const url =
+      'http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails';
+  final response = await http.get(
+    Uri.parse(url),
+    headers: {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    },
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    setState(() {
+      pendingCount = data['leaveEntries']['P'];
+      approverCount = data['leaveEntries']['A'];
+      rejectedCount = data['leaveEntries']['R'];
+    });
+print('PendingCount: $pendingCount');
+  }
+}
 
   Future<void> checkIfTodayIsMyBirthday() async {
     final prefs = await SharedPreferences.getInstance();
@@ -894,16 +982,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               buildBoxItem(
-                                  context,
-                                  "assets/pending.png",
-                                  "Pending",
-                                  PendingPage()),
-                              buildBoxItem(context, "assets/approver.png",
-                                  "Approver", ApproversPage()),
-                              buildBoxItem(context, "assets/rejected.png", "Rejected",
-                                  RejectedPage()),
+                                context,
+                                "assets/pending.png",
+                                "Pending",
+                                PendingPage(),
+                                leaveEntries:pendingCount ?? 0,
+                              ),
+                              buildBoxItem(
+                                context,
+                                "assets/approver.png",
+                                "Approved",
+                                ApprovedPage(),
+                                leaveEntries: approverCount ?? 0,
+                              ),
+                              buildBoxItem(
+                                context,
+                                "assets/rejected.png",
+                                "Rejected",
+                                RejectedPage(),
+                                leaveEntries: rejectedCount ?? 0,
+                              ),
                             ],
                           ),
+
                         ]
 
                       ],
@@ -1185,7 +1286,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget buildBoxItem(
+  Widget buildBoxItems(
       BuildContext context, String imagePath, String label, Widget page) {
     return InkWell(
       onTap: () {
@@ -7089,20 +7190,31 @@ class _PendingPageState extends State<PendingPage> {
     loadTokenAndFetchData();
   }
 
-  Future<void> loadTokenAndFetchData() async {
+    Future<void> loadTokenAndFetchData() async {
     final prefs = await SharedPreferences.getInstance();
-    tokenApi = prefs.getString('token') ?? 'apiToken';
+    tokenApi = prefs.getString('apiToken') ?? '';
     await fetchPendingData();
   }
 
   Future<void> fetchPendingData() async {
-    final url = Uri.parse('http://yourapi.com/api/Leave/GetPendingLeaves');
-    final response = await http.get(
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetPendingRequest');
+
+    // Body based on LeaveEntryFilterInputModel
+    final Map<String, dynamic> requestBody = {
+      "EmployeeCategoryId": null,
+      "EmployeeId": "", // Provide actual data if needed
+      "LeaveEntryTypeId": "", // Provide actual data
+      "LeaveTypeId": 0,
+      "Date": ""
+    };
+
+    final response = await http.post(
       url,
       headers: {
         'Authorization': 'Bearer $tokenApi',
         'Content-Type': 'application/json',
       },
+      body: jsonEncode(requestBody),
     );
 
     if (response.statusCode == 200) {
@@ -7141,7 +7253,7 @@ class _PendingPageState extends State<PendingPage> {
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Reason: ${item['reason']}"),
+                  Text("Reason: ${item['title']}"),
                   Text("Type: ${item['type']}"),
                   Text("Leave On: ${item['leaveOn']}"),
                   Text("Created On: ${item['createdOn']}"),
@@ -7171,16 +7283,50 @@ class _PendingPageState extends State<PendingPage> {
 
 class LeaveDetailsPage extends StatelessWidget {
   final Map<String, dynamic>? leaveData;
-  final LeaveRequest? data;
 
-  const LeaveDetailsPage({
-    super.key,
-    this.leaveData,
-    this.data,
-  });
+  const LeaveDetailsPage({super.key, this.leaveData});
+
+  Future<void> approveOrRejectRequest({
+    required BuildContext context,
+    required String actionId,
+    required String remarks,
+    required int requestId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final tokenApi = prefs.getString('apiToken') ?? '';
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/PendingApproval');
+    final body = {
+      "SelectedIds": [requestId],
+      "ActionId": actionId, // e.g. "Approve" or "Reject"
+      "Remarks": remarks,
+    };
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $tokenApi',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Action completed")),
+      );
+      Navigator.pop(context); // Return to PendingPage
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to perform action")),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final requestId = leaveData?['id'] ?? 0;
+
     return Scaffold(
       appBar: AppBar(title: const Text("Leave Details")),
       body: Padding(
@@ -7200,7 +7346,12 @@ class LeaveDetailsPage extends StatelessWidget {
               children: [
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Approve logic here
+                    approveOrRejectRequest(
+                      context: context,
+                      actionId: "Approve",
+                      remarks: "Approved",
+                      requestId: requestId,
+                    );
                   },
                   icon: const Icon(Icons.check),
                   label: const Text("Approve"),
@@ -7208,7 +7359,12 @@ class LeaveDetailsPage extends StatelessWidget {
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Reject logic here
+                    approveOrRejectRequest(
+                      context: context,
+                      actionId: "Reject",
+                      remarks: "Rejected",
+                      requestId: requestId,
+                    );
                   },
                   icon: const Icon(Icons.close),
                   label: const Text("Reject"),
@@ -7223,12 +7379,12 @@ class LeaveDetailsPage extends StatelessWidget {
 }
 
 
-class ApproversPage extends StatefulWidget {
+class ApprovedPage extends StatefulWidget {
   @override
-  State<ApproversPage> createState() => _ApproversPageState();
+  State<ApprovedPage> createState() => _ApprovedPageState();
 }
 
-class _ApproversPageState extends State<ApproversPage> {
+class _ApprovedPageState extends State<ApprovedPage> {
   List<LeaveRequest> approvedList = [];
   bool isLoading = true;
 
@@ -7240,15 +7396,25 @@ class _ApproversPageState extends State<ApproversPage> {
 
   Future<void> fetchApprovedData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String token = prefs.getString('token') ?? '';
+    String token = prefs.getString('apiToken') ?? ''; // Consistent key
 
-    final url = Uri.parse("https://your-api.com/api/Leave/GetApprovedLeave");
-    final response = await http.get(
+    final url = Uri.parse("http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetApproved");
+
+    final body = {
+      "EmployeeCategoryId": null,
+      "EmployeeId": "",
+      "LeaveEntryTypeId": "",
+      "LeaveTypeId": 0,
+      "Date": ""
+    };
+
+    final response = await http.post(
       url,
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
+      body: jsonEncode(body),
     );
 
     if (response.statusCode == 200) {
@@ -7265,6 +7431,32 @@ class _ApproversPageState extends State<ApproversPage> {
     }
   }
 
+  Widget buildLeaveCard(LeaveRequest data, VoidCallback onDetailsTap) {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.all(8),
+      child: ListTile(
+        title: Text("${data.leaveType} (${data.type})", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Reason: ${data.reason}"),
+            Text("From: ${data.leaveOn}"),
+            Text("Created On: ${data.createdOn}"),
+            Text("Status: ${data.status}"),
+            if (data.status == "Rejected")
+              Text("Rejected By: ${data.approvedUser} on ${data.approvedOn}"),
+          ],
+        ),
+        trailing: TextButton(
+          onPressed: onDetailsTap,
+          child: const Text("Details"),
+        ),
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -7275,12 +7467,14 @@ class _ApproversPageState extends State<ApproversPage> {
         itemCount: approvedList.length,
         itemBuilder: (context, index) {
           return buildLeaveCard(approvedList[index], () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => LeaveDetailsPage(data: approvedList[index], leaveData: {},),
-              ),
-            );
+            // Navigator.push(
+            //   context,
+            //   MaterialPageRoute(
+            //     builder: (_) => LeaveDetailsPage(
+            //       leaveData: approvedList[index],
+            //     ),
+            //   ),
+            // );
           });
         },
       ),
@@ -7329,43 +7523,144 @@ class LeaveRequest {
   }
 }
 
-Widget buildLeaveCard(LeaveRequest data, VoidCallback onDetailsTap) {
-  return Card(
-    elevation: 4,
-    margin: const EdgeInsets.all(8),
-    child: ListTile(
-      title: Text("${data.leaveType} (${data.type})", style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Reason: ${data.reason}"),
-          Text("From: ${data.leaveOn}"),
-          Text("Created On: ${data.createdOn}"),
-          Text("Status: ${data.status}"),
-          if (data.status == "Approved") Text("Approved By: ${data.approvedUser} on ${data.approvedOn}"),
-        ],
-      ),
-      trailing: TextButton(
-        onPressed: onDetailsTap,
-        child: const Text("Details"),
-      ),
-    ),
-  );
-}
-
-
 class RejectedPage extends StatefulWidget {
   @override
   _RejectedPageState createState() => _RejectedPageState();
 }
 
 class _RejectedPageState extends State<RejectedPage> {
+  List<LeaveRequest> rejectedList = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchRejectedData();
+  }
+
+  Widget buildLeaveCard(LeaveRequest data, VoidCallback onDetailsTap) {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.all(8),
+      child: ListTile(
+        title: Text("${data.leaveType} (${data.type})", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Reason: ${data.reason}"),
+            Text("From: ${data.leaveOn}"),
+            Text("Created On: ${data.createdOn}"),
+            Text("Status: ${data.status}"),
+            if (data.status == "Rejected")
+              Text("Rejected By: ${data.approvedUser} on ${data.approvedOn}"),
+          ],
+        ),
+        trailing: TextButton(
+          onPressed: onDetailsTap,
+          child: const Text("Details"),
+        ),
+      ),
+    );
+  }
+
+
+  Future<void> fetchRejectedData() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String token = prefs.getString('apiToken') ?? '';
+
+    final url = Uri.parse("http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetRejected");
+
+    final body = {
+      "EmployeeCategoryId": null,
+      "EmployeeId": "",
+      "LeaveEntryTypeId": "",
+      "LeaveTypeId": 0,
+      "Date": ""
+    };
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> jsonList = jsonDecode(response.body);
+      setState(() {
+        rejectedList = jsonList.map((json) => LeaveRequest.fromJson(json)).toList();
+        isLoading = false;
+      });
+    } else {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load rejected data')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Rejected List")),
-      body: const Center(child: Text("Rejected Page")),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+        itemCount: rejectedList.length,
+        itemBuilder: (context, index) {
+          return buildLeaveCard(rejectedList[index], () {
+            // Navigator.push(
+            //   context,
+            //   MaterialPageRoute(
+            //     builder: (_) => LeaveDetailsPage(
+            //       leaveData: rejectedList[index],
+            //     ),
+            //   ),
+            // );
+          });
+        },
+      ),
     );
   }
 }
+
+class LeaveDetailPage extends StatefulWidget {
+  final LeaveRequest leaveData;
+
+  const LeaveDetailPage({super.key, required this.leaveData});
+
+  @override
+  State<LeaveDetailPage> createState() => _LeaveDetailPageState();
+}
+
+class _LeaveDetailPageState extends State<LeaveDetailPage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Leave Details")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Employee ID: ${widget.leaveData?.empId}"),
+            Text("Name: ${widget.leaveData?.name}"),
+            Text("Reason: ${widget.leaveData?.reason}"),
+            Text("Type: ${widget.leaveData.type}"),
+            Text("Leave On: ${widget.leaveData.leaveOn}"),
+            Text("Created On: ${widget.leaveData.createdOn}"),
+            Text("Leave Type: ${widget.leaveData.leaveType}"),
+            Text("Status: ${widget.leaveData.status}"),
+            Text("Approved By: ${widget.leaveData.approvedUser}"),
+            Text("Approved On: ${widget.leaveData.approvedOn}"),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 
