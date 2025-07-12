@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:confetti/confetti.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,7 +10,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:gif/gif.dart';
+import 'package:image/image.dart' as img;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 // import 'package:googleapis_auth/auth_browser.dart';
 // import 'package:googleapis_auth/auth_io.dart';
 import 'package:hanon/log_database.dart';
@@ -20,6 +23,7 @@ import 'package:hanon/push_notification_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:mime/mime.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'login.dart'; // inside main.dart
@@ -54,7 +58,8 @@ void main() async {
     } else {
       print('Home Page...');
       navigatorKey.currentState?.pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomePage()),
+        MaterialPageRoute(
+            builder: (_) => HomePage()),
       );
     }
   });
@@ -347,7 +352,8 @@ class _LoginPageState extends State<LoginPage> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (context) => const HomePage()),
+                MaterialPageRoute(
+                    builder: (context) => const HomePage()),
               );
             });
           } else {
@@ -420,7 +426,9 @@ class _PasswordFieldState extends State<PasswordField> {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final File? capturedImage;
+  const HomePage({Key? key, this.capturedImage}) : super(key: key);
+
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -442,6 +450,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int? pendingCount;
   int? approverCount;
   int? rejectedCount;
+  String? profileImagePath;
 
   // in your HomePage class
   ConfettiController? _confettiController;
@@ -461,12 +470,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     checkIfTodayIsMyBirthday();
     checkApprover();
     checkPending();
+    loadProfileImage();
     controller1 = GifController(vsync: this);
     Future.delayed(const Duration(seconds: 1), () async {
       await fetchUser();
       setState(() {
         _isLoading = false;
       });
+    });
+  }
+
+  Future<void> loadProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      profileImagePath = prefs.getString('profileImagePath');
     });
   }
 
@@ -480,12 +497,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget buildBoxItem(
-      BuildContext context,
-      String imagePath,
-      String label,
-      Widget page, {
-        int leaveEntries = 0, // Default value
-      }) {
+    BuildContext context,
+    String imagePath,
+    String label,
+    Widget page, {
+    int leaveEntries = 0, // Default value
+  }) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -517,7 +534,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       color: Colors.red,
                       shape: BoxShape.circle,
                     ),
-                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                    constraints:
+                        const BoxConstraints(minWidth: 20, minHeight: 20),
                     child: Center(
                       child: Text(
                         '$leaveEntries',
@@ -539,29 +557,63 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-Future<void> checkPending() async {
-  final prefs = await SharedPreferences.getInstance();
-  final token = prefs.getString('apiToken');
-  const url =
-      'http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails';
-  final response = await http.get(
-    Uri.parse(url),
-    headers: {
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-    },
-  );
-
-  if (response.statusCode == 200) {
-    final data = jsonDecode(response.body);
-    setState(() {
-      pendingCount = data['leaveEntries']['P'];
-      approverCount = data['leaveEntries']['A'];
-      rejectedCount = data['leaveEntries']['R'];
-    });
-print('PendingCount: $pendingCount');
+  Widget buildBoxItems(
+      BuildContext context, String imagePath, String label, Widget page,
+      {required String leaveEntries}) {
+    return GestureDetector(
+      onTap: () =>
+          Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+      child: Column(
+        children: [
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              Image.asset(imagePath, width: 60, height: 60),
+              if (leaveEntries != '0')
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    leaveEntries,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
-}
+
+  Future<void> checkPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('apiToken');
+    const url =
+        'http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails';
+    final response = await http.get(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      setState(() {
+        pendingCount = data['leaveEntries']['P'];
+        approverCount = data['leaveEntries']['A'];
+        rejectedCount = data['leaveEntries']['R'];
+      });
+      print('PendingCount: $pendingCount');
+    }
+  }
 
   Future<void> checkIfTodayIsMyBirthday() async {
     final prefs = await SharedPreferences.getInstance();
@@ -740,7 +792,6 @@ print('PendingCount: $pendingCount');
           genderBottomBarPhoto = 0xFFfa8492;
           genderPhoto = 'assets/animations/pink bg.png';
 
-
           DateTime dobDate = DateFormat("dd-MM-yyyy").parse(dob!);
           DateTime today = DateTime.now();
 
@@ -892,10 +943,13 @@ print('PendingCount: $pendingCount');
               child: Column(
                 children: [
                   const SizedBox(height: 10),
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 60,
-                    backgroundImage: AssetImage('assets/no_profile.jpg'),
+                    backgroundImage: widget.capturedImage != null
+                        ? FileImage(widget.capturedImage!)
+                        : const AssetImage('assets/no_profile.jpg') as ImageProvider,
                   ),
+
                   const SizedBox(height: 10),
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -967,8 +1021,8 @@ print('PendingCount: $pendingCount');
                             buildBoxItem(
                                 context,
                                 "assets/panic.png",
-                                "Panic Alert",
-                                PanicAlertPage(
+                                "Manual Punch",
+                                AlertPage(
                                   name: userName!,
                                 )),
                             buildBoxItem(context, "assets/biometric.png",
@@ -977,37 +1031,41 @@ print('PendingCount: $pendingCount');
                                 const LogoutPage()),
                           ],
                         ),
-                        if(roleType == true)...[
+                        if (roleType == true) ...[
                           const SizedBox(height: 16),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              buildBoxItem(
+                              buildBoxItems(
                                 context,
                                 "assets/pending.png",
                                 "Pending",
                                 PendingPage(),
-                                leaveEntries:pendingCount ?? 0,
+                                leaveEntries: (pendingCount ?? 0) > 99
+                                    ? "99+"
+                                    : (pendingCount ?? 0).toString(),
                               ),
-                              buildBoxItem(
+                              buildBoxItems(
                                 context,
                                 "assets/approver.png",
                                 "Approved",
                                 ApprovedPage(),
-                                leaveEntries: approverCount ?? 0,
+                                leaveEntries: (approverCount ?? 0) > 99
+                                    ? "99+"
+                                    : (approverCount ?? 0).toString(),
                               ),
-                              buildBoxItem(
+                              buildBoxItems(
                                 context,
                                 "assets/rejected.png",
                                 "Rejected",
                                 RejectedPage(),
-                                leaveEntries: rejectedCount ?? 0,
+                                leaveEntries: (rejectedCount ?? 0) > 99
+                                    ? "99+"
+                                    : (rejectedCount ?? 0).toString(),
                               ),
                             ],
                           ),
-
                         ]
-
                       ],
                     ),
                   ),
@@ -1174,7 +1232,7 @@ print('PendingCount: $pendingCount');
                       context,
                       MaterialPageRoute(
                           builder: (context) =>
-                              ProfilePage(genderPhoto: genderPhoto!)),
+                              ProfilePage(genderPhoto: genderPhoto!, capturedImage:widget.capturedImage,)),
                     );
                   },
                 ),
@@ -1287,7 +1345,7 @@ print('PendingCount: $pendingCount');
     );
   }
 
-  Widget buildBoxItems(
+  Widget buildBoxItemes(
       BuildContext context, String imagePath, String label, Widget page) {
     return InkWell(
       onTap: () {
@@ -1321,9 +1379,12 @@ print('PendingCount: $pendingCount');
 
 class ProfilePage extends StatefulWidget {
   final String genderPhoto;
+  final File? capturedImage;
+
   const ProfilePage({
     super.key,
     required this.genderPhoto,
+    this.capturedImage,
   });
 
   @override
@@ -1470,7 +1531,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       height: 400,
                       decoration: BoxDecoration(
                         image: DecorationImage(
-                          image: AssetImage(widget.genderPhoto),
+                          image:
+
+                          AssetImage(widget.genderPhoto),
                           fit: BoxFit.cover,
                         ),
                         borderRadius: BorderRadius.only(
@@ -1503,10 +1566,11 @@ class _ProfilePageState extends State<ProfilePage> {
                       right: 0,
                       child: Column(
                         children: [
-                          const CircleAvatar(
+                          CircleAvatar(
                             radius: 80,
-                            backgroundImage:
-                                AssetImage('assets/no_profile.jpg'),
+                          backgroundImage: widget.capturedImage != null
+                              ? FileImage(widget.capturedImage!)
+                              : const AssetImage('assets/no_profile.jpg') as ImageProvider,
                           ),
                           const SizedBox(height: 12),
                           Padding(
@@ -2435,6 +2499,8 @@ Route _createDrawerRoute() {
   );
 }
 
+
+
 class HolidayPage extends StatefulWidget {
   const HolidayPage({Key? key}) : super(key: key);
 
@@ -2447,8 +2513,165 @@ class _HolidayPageState extends State<HolidayPage> {
   List<Map<String, dynamic>> holidays = [];
   List<Map<String, dynamic>> npdList = [];
   List<Map<String, dynamic>> fiftyList = [];
-
   bool isLoading = true;
+  Key listKey = UniqueKey();
+  int selectedIndex = -1;
+  int isFront = 0;
+
+  void _swapCards(int index) {
+    setState(() {
+      isFront = index;
+      selectedTabIndex = index;
+      listKey = UniqueKey();
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchHolidayData();
+  }
+
+  Widget _buildSecondCard({
+    required List<Color> colors,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 300,
+      height: 120,
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            offset: Offset(0, 6),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.person, color: colors[0], size: 30),
+          ),
+          SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('NPD',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFrontCard({
+    required List<Color> colors,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 300,
+      height: 120,
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            offset: Offset(0, 6),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.person, color: colors[0], size: 30),
+          ),
+          SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Hoilday',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLastCard({
+    required List<Color> colors,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 300,
+      height: 120,
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            offset: Offset(0, 6),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.person, color: colors[0], size: 30),
+          ),
+          SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('50:50',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   List<Map<String, dynamic>> get currentList {
     switch (selectedTabIndex) {
@@ -2461,56 +2684,40 @@ class _HolidayPageState extends State<HolidayPage> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    fetchHolidayData();
-  }
-
   Future<void> fetchHolidayData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token =
-        prefs.getString('apiToken'); // Make sure you have stored 'token'
-    print(token);
+    String? token = prefs.getString('apiToken');
     if (token == null) {
       print('Token not found!');
       return;
     }
 
-    final url = Uri.parse(
-        'http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails');
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails');
 
     try {
-      final response = await http.get(
-        url,
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final response = await http.get(url, headers: {'Authorization': 'Bearer $token'});
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('===> $data');
         setState(() {
           holidays = List<Map<String, dynamic>>.from(
             data['holidays'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
-
           npdList = List<Map<String, dynamic>>.from(
             data['npd'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
-
           fiftyList = List<Map<String, dynamic>>.from(
             data['fiftyFifties'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
-
           isLoading = false;
         });
       } else {
@@ -2522,7 +2729,6 @@ class _HolidayPageState extends State<HolidayPage> {
   }
 
   String formatDate(String rawDate) {
-    // Convert '2025-01-01' to '01-01-2025'
     try {
       DateTime dt = DateTime.parse(rawDate);
       return '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
@@ -2531,115 +2737,268 @@ class _HolidayPageState extends State<HolidayPage> {
     }
   }
 
+  List<Widget> _buildCardStack() {
+    List<Widget> cards = [];
+
+    List<int> order = [0, 1, 2]; // 0 = Holiday, 1 = NPD, 2 = 50:50
+
+    // Move selected to end (top-most)
+    order.remove(isFront);
+    order.add(isFront);
+
+    // Offsets to prevent overlap
+    const List<double> topOffsets = [40, 20, 0];
+    const List<double> leftOffsets = [40, 20, 0];
+    const List<double> scales = [0.9, 0.95, 1.0];
+
+    for (int i = 0; i < order.length; i++) {
+      int index = order[i];
+
+      // Apply reverse offset logic so top card (isFront) has least offset
+      cards.add(
+        Positioned(
+          top: topOffsets[i],
+          left: leftOffsets[i],
+          child: GestureDetector(
+            onTap: () => _swapCards(index),
+            child: Transform.scale(
+              scale: scales[i],
+              child: _buildCardByIndex(index),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return cards;
+  }
+
+
+
+  Widget _buildCardByIndex(int index) {
+    switch (index) {
+      case 0:
+        return _buildFrontCard(
+          colors: [Color(0xFFFFB199), Color(0xFFFFEC61)],
+          textColor: Colors.black,
+        );
+      case 1:
+        return _buildSecondCard(
+          colors: [Color(0xFFFF6B6B), Color(0xFFFF8E8E)],
+          textColor: Colors.white,
+        );
+      case 2:
+        return _buildLastCard(
+          colors: [Color(0xFF84FAB0), Color(0xFF8FD3F4)],
+          textColor: Colors.white,
+        );
+      default:
+        return SizedBox();
+    }
+  }
+
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Holidays', style: TextStyle(color: Colors.white)),
+        title: const Text('Holiday Details', style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.blueGrey.shade800,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8.0, vertical: 10),
-                  child: Row(
-                    children: [
-                      _buildTabButton('HOLIDAY', 0),
-                      const SizedBox(width: 10),
-                      _buildTabButton('NPD', 1),
-                      const SizedBox(width: 10),
-                      _buildTabButton('50:50', 2),
-                    ],
-                  ),
-                ),
-                Container(
-                  color: Colors.blueGrey.shade700,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: const [
-                      Expanded(
-                        flex: 2,
-                        child: Center(
-                          child: Text('NAME',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 1,
-                        child: Center(
-                          child: Text('DATE',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: currentList.length,
-                    itemBuilder: (context, index) {
-                      final item = currentList[index];
-                      return Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: Colors.grey.shade300),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Text(item['description'] ?? '',
-                                    style: const TextStyle(fontSize: 16)),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 1,
-                              child: Text(
-                                item['date']!,
-                                style: const TextStyle(fontSize: 16),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+        children: [
+          // const SizedBox(height: 12),
+          // _buildHeaderCards(),
+          // const SizedBox(height: 8),
+          // _buildTableHeader(),
+
+          Padding(padding: EdgeInsets.all(14),
+          child: SizedBox(
+            height: 160,
+            width: 400,
+            child: Stack(
+              children: _buildCardStack(),
             ),
+          ),
+          ),
+
+
+
+
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              switchInCurve: Curves.easeInOut,
+              key: listKey,
+              child: _buildAnimatedList(currentList),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildTabButton(String label, int index) {
-    return Expanded(
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor:
-              selectedTabIndex == index ? Colors.green : Colors.grey.shade300,
-        ),
-        onPressed: () {
+  Widget _buildHeaderCards() {
+    return SizedBox(
+      height: 130,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          _buildRollCard("Holiday", 0, [Color(0xFFFFB199), Color(0xFFFFEC61)], Colors.black),
+          const SizedBox(width: 12),
+          _buildRollCard("NPD", 1, [Color(0xFF84FAB0), Color(0xFF8FD3F4)], Colors.black),
+          const SizedBox(width: 12),
+          _buildRollCard("50:50", 2, [Color(0xFFFF6B6B), Color(0xFFFF8E8E)], Colors.white),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRollCard(String title, int index, List<Color> colors, Color textColor) {
+    bool isSelected = selectedTabIndex == index;
+
+    return GestureDetector(
+      onTap: () {
+        if (!isSelected) {
           setState(() {
             selectedTabIndex = index;
+            listKey = UniqueKey();
           });
-        },
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selectedTabIndex == index ? Colors.white : Colors.black,
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: 260,
+        height: 110,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: colors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 10,
+              offset: const Offset(2, 6),
+            )
+          ],
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: Colors.white,
+              child: Icon(Icons.event, color: colors.first, size: 30),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title.toUpperCase(),
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildTableHeader() {
+    return Container(
+      color: Colors.blueGrey.shade700,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: const Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: Text('NAME', style: TextStyle(color: Colors.white)),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Center(
+              child: Text('DATE', style: TextStyle(color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedList(List<Map<String, dynamic>> list) {
+    return AnimationLimiter(
+      key: ValueKey<int>(selectedTabIndex),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        itemCount: list.length,
+        itemBuilder: (context, index) {
+          final item = list[index];
+          return AnimationConfiguration.staggeredList(
+            position: index,
+            duration: const Duration(milliseconds: 700),
+            child: SlideAnimation(
+              verticalOffset: 50.0,
+              child: FadeInAnimation(
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.2),
+                        blurRadius: 6,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          item['description'] ?? '',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 1,
+                        child: Text(
+                          item['date']!,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
+
+
+
+
 
 class ApproverPage extends StatefulWidget {
   const ApproverPage({super.key});
@@ -2651,6 +3010,15 @@ class ApproverPage extends StatefulWidget {
 class _ApproverPageState extends State<ApproverPage> {
   List<List<String>> approverData = [];
   List<List<String>> requestData = [];
+  int selectedIndex = -1;
+  bool isFront = true;
+
+  void _swapCards() {
+    setState(() {
+      isFront = !isFront;
+      selectedIndex = -1;
+    });
+  }
 
   bool isApproverSelected = true;
 
@@ -2719,6 +3087,103 @@ class _ApproverPageState extends State<ApproverPage> {
     }
   }
 
+
+  Widget _buildFrontCard({
+    required List<Color> colors,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 300,
+      height: 120,
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            offset: Offset(0, 6),
+            blurRadius: 10,
+          )
+        ],
+      ),
+
+      child: Row(
+        children: [
+
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.person, color: colors[0], size: 30),
+          ),
+          SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('APPROVER',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackCard({
+    required List<Color> colors,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 300,
+      height: 120,
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            offset: Offset(0, 6),
+            blurRadius: 10,
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 25,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.person, color: colors[0], size: 30),
+          ),
+          SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('REQUESTER',
+                  style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2734,6 +3199,99 @@ class _ApproverPageState extends State<ApproverPage> {
       ),
       body: Column(
         children: [
+          SizedBox(
+            height: 140,
+            width: 350,
+            child: Stack(
+              children: isFront
+                  ? [
+                // Back card first
+                AnimatedPositioned(
+                  duration: Duration(milliseconds: 300),
+                  top: 0,
+                  left: 0,
+                  child: GestureDetector(
+                    onTap: _swapCards,
+                    child: AnimatedScale(
+                      scale: 1.0,
+                      duration: Duration(milliseconds: 300),
+                      child: _buildBackCard(
+                        colors: [
+                          Color(0xFFFF6B6B),
+                          Color(0xFFFF8E8E)
+                        ],
+                        textColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                // Front card second (drawn on top)
+                AnimatedPositioned(
+                  duration: Duration(milliseconds: 300),
+                  top: 20,
+                  left: 20,
+                  child: GestureDetector(
+                    onTap: _swapCards,
+                    child: AnimatedScale(
+                      scale: 0.95,
+                      duration: Duration(milliseconds: 300),
+                      child: _buildFrontCard(
+                        colors: [
+                          Color(0xFFFFB199),
+                          Color(0xFFFFEC61)
+                        ],
+                        textColor: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+              ]
+                  : [
+                // Reverse order
+                AnimatedPositioned(
+                  duration: Duration(milliseconds: 300),
+                  top: 20,
+                  left: 20,
+                  child: GestureDetector(
+                    onTap: _swapCards,
+                    child: AnimatedScale(
+                      scale: 0.95,
+                      duration: Duration(milliseconds: 300),
+                      child: _buildFrontCard(
+                        colors: [
+                          Color(0xFFFFB199),
+                          Color(0xFFFFEC61)
+                        ],
+                        textColor: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+                AnimatedPositioned(
+                  duration: Duration(milliseconds: 300),
+                  top: 0,
+                  left: 0,
+                  child: GestureDetector(
+                    onTap: _swapCards,
+                    child: AnimatedScale(
+                      scale: 1.0,
+                      duration: Duration(milliseconds: 300),
+                      child: _buildBackCard(
+                        colors: [
+                          Color(0xFFFF6B6B),
+                          Color(0xFFFF8E8E)
+                        ],
+                        textColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+
+
           Container(
             margin: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -2746,7 +3304,6 @@ class _ApproverPageState extends State<ApproverPage> {
                   child: GestureDetector(
                     onTap: () {
                       setState(() {
-                        isApproverSelected = true;
                         isApproverSelected = true;
                       });
                     },
@@ -2895,12 +3452,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<Map<String, dynamic>> fetchDashboardData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('apiToken');
-
-    print(token);
-
     final response = await http.get(
-      Uri.parse(
-          'http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails'),
+      Uri.parse('http://hrmwebapi.lemeniz.com/api/Notification/GetOverallDashboardDetails'),
       headers: {'Authorization': 'Bearer $token'},
     );
     log(response.body);
@@ -2911,8 +3464,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  Widget _buildSummaryTable(
-      String title, List<String> headers, List<String> values) {
+  Widget _buildSummaryTable(String title, List<String> headers, List<String> values) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2928,23 +3480,17 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             children: [
               TableRow(
-                decoration: BoxDecoration(color: Color(0xFF0A3055)),
-                children: headers
-                    .map((h) => Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(h,
-                              style: const TextStyle(color: Colors.white),
-                              textAlign: TextAlign.center),
-                        ))
-                    .toList(),
+                decoration: const BoxDecoration(color: Color(0xFF0A3055)),
+                children: headers.map((h) => Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(h, style: const TextStyle(color: Colors.white), textAlign: TextAlign.center),
+                )).toList(),
               ),
               TableRow(
-                children: values
-                    .map((v) => Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(v, textAlign: TextAlign.center),
-                        ))
-                    .toList(),
+                children: values.map((v) => Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(v, textAlign: TextAlign.center),
+                )).toList(),
               ),
             ],
           ),
@@ -2960,12 +3506,11 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           Container(
             height: 38,
-            color: Color(0xFF0A3055),
+            color: const Color(0xFF0A3055),
             alignment: Alignment.center,
             child: Text(
               title,
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
           Container(
@@ -2988,11 +3533,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          "Dashboard",
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: Color(0xFF0A3055),
+        title: const Text("Dashboard", style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF0A3055),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: FutureBuilder<Map<String, dynamic>>(
@@ -3005,87 +3547,66 @@ class _DashboardPageState extends State<DashboardPage> {
           }
 
           final data = snapshot.data!;
-          final absent = data['summary'] ?? {};
-          final saturday = data['summary'] ?? {};
+          final summary = data['summary'] ?? {};
           final training = data['trainingSummary'] ?? 0;
           final leave = data['leaveAvailableSummary'] ?? {};
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          return AnimationLimiter(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: AnimationConfiguration.toStaggeredList(
+                  duration: const Duration(milliseconds: 500),
+                  childAnimationBuilder: (widget) => SlideAnimation(
+                    verticalOffset: 50.0,
+                    child: FadeInAnimation(child: widget),
+                  ),
                   children: [
-                    Expanded(
-                        child: _buildSummaryTable("Absent Summary", [
-                      "AB",
-                      "HD",
-                      "SP"
-                    ], [
-                      '${absent["absent"] ?? 0}',
-                      '${absent["halfDayPresent"] ?? 0}',
-                      '${absent["singlePunch"] ?? 0}',
-                    ])),
-                    const SizedBox(width: 16),
-                    Expanded(
-                        child: _buildSummaryTable("Saturday Summary", [
-                      "Worked",
-                      "Pending"
-                    ], [
-                      '${saturday["saturdayWorking"] ?? 0}',
-                      '${saturday["pendingSatrudayToWork"] ?? 0}',
-                    ])),
-                  ],
-                ),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 160,
-                      child: _buildSummaryTable(
-                        "Training Summary",
-                        ["Training"],
-                        ['${training.toString()}'],
-                      ),
+                    Row(
+                      children: [
+                        Expanded(child: _buildSummaryTable("Absent Summary", ["AB", "HD", "SP"], [
+                          '${summary["absent"] ?? 0}',
+                          '${summary["halfDayPresent"] ?? 0}',
+                          '${summary["singlePunch"] ?? 0}',
+                        ])),
+                        const SizedBox(width: 16),
+                        Expanded(child: _buildSummaryTable("Saturday Summary", ["Worked", "Pending"], [
+                          '${summary["saturdayWorking"] ?? 0}',
+                          '${summary["pendingSatrudayToWork"] ?? 0}',
+                        ])),
+                      ],
                     ),
+                    const SizedBox(height: 16),
+                    _buildSummaryTable("Training Summary", ["Training"], ['${training.toString()}']),
+                    const SizedBox(height: 24),
+                    const Text("Leave Available Summary", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      _buildLeaveCard("EL – Earned Leave", '${leave["1"]?['noOfLeaveTaken'] ?? 0} / ${leave["1"]?['noOfLeaveAllocated'] ?? 0}'),
+                      const SizedBox(width: 14),
+                      _buildLeaveCard("SL–Sick/ML –Medical", '${leave["2"]?['noOfLeaveTaken'] ?? 0} / ${leave["2"]?['noOfLeaveAllocated'] ?? 0}'),
+                    ]),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      _buildLeaveCard("CL – Casual Leave", '${leave["3"]?['noOfLeaveTaken'] ?? 0} / ${leave["3"]?['noOfLeaveAllocated'] ?? 0}'),
+                      const SizedBox(width: 14),
+                      _buildLeaveCard("Comp off", '${leave["4"]?['noOfLeaveTaken'] ?? 0} / ${leave["4"]?['noOfLeaveAllocated'] ?? 0}'),
+                    ]),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      _buildLeaveCard("Marriage Leave", '${leave["5"]?['noOfLeaveTaken'] ?? 0} / ${leave["5"]?['noOfLeaveAllocated'] ?? 0}'),
+                      const SizedBox(width: 14),
+                      _buildLeaveCard("Paternity Leave", '${leave["6"]?['noOfLeaveTaken'] ?? 0} / ${leave["6"]?['noOfLeaveAllocated'] ?? 0}'),
+                    ]),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      _buildLeaveCard("Condolence", '${leave["7"]?['noOfLeaveTaken'] ?? 0} / ${leave["7"]?['noOfLeaveAllocated'] ?? 0}'),
+                      const Spacer(),
+                    ]),
                   ],
                 ),
-                const SizedBox(height: 24),
-                const Text("Leave Available Summary",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Row(children: [
-                  _buildLeaveCard("EL – Earned Leave",
-                      '${leave["1"]?['noOfLeaveTaken'] ?? 0} / ${leave["1"]?['noOfLeaveAllocated'] ?? 0}'),
-                  SizedBox(width: 14),
-                  _buildLeaveCard("SL–Sick/ML –Medical",
-                      '${leave["2"]?['noOfLeaveTaken'] ?? 0} / ${leave["2"]?['noOfLeaveAllocated'] ?? 0}'),
-                ]),
-                SizedBox(height: 16),
-                Row(children: [
-                  _buildLeaveCard("CL – Casual Leave",
-                      '${leave["3"]?['noOfLeaveTaken'] ?? 0} / ${leave["3"]?['noOfLeaveAllocated'] ?? 0}'),
-                  SizedBox(width: 14),
-                  _buildLeaveCard("Comp off",
-                      '${leave["4"]?['noOfLeaveTaken'] ?? 0} / ${leave["4"]?['noOfLeaveAllocated'] ?? 0}'),
-                ]),
-                SizedBox(height: 16),
-                Row(children: [
-                  _buildLeaveCard("Marriage Leave",
-                      '${leave["5"]?['noOfLeaveTaken'] ?? 0} / ${leave["5"]?['noOfLeaveAllocated'] ?? 0}'),
-                  SizedBox(width: 14),
-                  _buildLeaveCard("Paternity Leave",
-                      '${leave["6"]?['noOfLeaveTaken'] ?? 0} / ${leave["6"]?['noOfLeaveAllocated'] ?? 0}'),
-                ]),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    _buildLeaveCard("Condolence",
-                        '${leave["7"]?['noOfLeaveTaken'] ?? 0} / ${leave["7"]?['noOfLeaveAllocated'] ?? 0}'),
-                    Spacer(),
-                  ],
-                )
-              ],
+              ),
             ),
           );
         },
@@ -4030,22 +4551,186 @@ class AttendanceServices {
   }
 }
 
-class AlertPage extends StatelessWidget {
-  const AlertPage({super.key});
+class AlertPage extends StatefulWidget {
+  final String name;
 
-  Future<void> _openCamera(BuildContext context) async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.camera);
+  const AlertPage({super.key, required this.name});
 
-    if (image != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PreviewPage(imagePath: image.path),
-        ),
+  @override
+  State<AlertPage> createState() => _AlertPageState();
+}
+
+class _AlertPageState extends State<AlertPage> {
+  List<dynamic> alertData = [];
+  File? _capturedImage;
+  @override
+  void initState() {
+    _cameraController?.dispose();
+    super.initState();
+    fetchAllLogs();
+    checkPunch();
+  }
+
+
+
+  Future<void> checkPunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? Token = await prefs.getString('apiToken');
+    const String apiUrl = "http://hrmwebapi.lemeniz.com/api/Attendance/GetPunchDetail";
+
+    try {
+      final response = await http.get(
+        Uri.parse(apiUrl),
+        headers: {
+          'Authorization': 'Bearer $Token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        log('data: $data');
+
+        // final String punch = data['punch'];
+        // final String punchTime = data['punchTime'];
+        // final String remarks = data['remarks'];
+        // final String name = data['name'];
+        //
+        // // Example: use data in UI or log it
+        // print('👤 Name: $name');
+        // print('🕒 Punch Type: $punch');
+        // print('📅 Punch Time: $punchTime');
+        // print('💬 Remarks: $remarks');
+
+        // You can use setState to show it in your widget
+      } else {
+        print("❌ Error: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("❌ Exception: $e");
+    }
+  }
+
+
+
+
+
+  Future<void> requestCameraPermissions() async {
+    await [
+      Permission.camera,
+      Permission.photos, // for iOS
+      Permission.storage, // Android only, may be ignored on Android 13+
+    ].request();
+  }
+
+  Future<void> fetchAllLogs() async {
+    List<LogEntry> logs = await LogDatabase.instance.getLogs();
+    setState(() {
+      alertData = logs
+          .map((log) => {
+        'date': '${log.date}\n${log.time}',
+        'name': widget.name,
+        'latitude': log.latitude,
+        'longitude': log.longitude,
+      })
+          .toList();
+    });
+  }
+
+  Future<void> _openCamera() async {
+    await requestCameraPermissions();
+    try {
+      final pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+      );
+
+      if (pickedFile == null) return;
+
+      final File imageFile = File(pickedFile.path);
+      final inputImage = InputImage.fromFile(imageFile);
+
+      final faceDetector = FaceDetector(
+        options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+      );
+
+      final List<Face> faces = await faceDetector.processImage(inputImage);
+      await faceDetector.close();
+
+      if (faces.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No face detected. Please try again.')),
+        );
+        return;
+      }
+
+        _capturedImage = imageFile;
+        if (!mounted) return;
+        if (await imageFile.exists()) {
+          _capturedImage = imageFile;
+          if (!mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => HomePage(capturedImage: _capturedImage!),
+            ),
+          );
+        } else {
+          print("Captured image does not exist.");
+        }
+    } catch (e) {
+      print("Camera error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
       );
     }
   }
+
+
+  Future<bool> compareImages(File img1File, File img2File) async {
+    try {
+      final img1Bytes = await img1File.readAsBytes();
+      final img2Bytes = await img2File.readAsBytes();
+
+      final img1 = img.decodeImage(img1Bytes);
+      final img2 = img.decodeImage(img2Bytes);
+
+      if (img1 == null || img2 == null) return false;
+
+      // Resize both images to same small size to reduce memory load
+      final resized1 = img.copyResize(img1, width: 100, height: 100);
+      final resized2 = img.copyResize(img2, width: 100, height: 100);
+
+      int diffPixels = 0;
+      for (int y = 0; y < 100; y++) {
+        for (int x = 0; x < 100; x++) {
+          if (resized1.getPixel(x, y) != resized2.getPixel(x, y)) {
+            diffPixels++;
+          }
+        }
+      }
+
+      final similarity = 1 - (diffPixels / (100 * 100));
+      return similarity > 0.90; // 90% match threshold
+    } catch (e) {
+      print("Image comparison failed: $e");
+      return false;
+    }
+  }
+
+  void _openMap(String latitude, String longitude) async {
+    final Uri googleMapUrl = Uri.parse(
+        "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude");
+
+    try {
+      await launchUrl(googleMapUrl, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      print("Failed to launch map: $e");
+    }
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -4060,18 +4745,10 @@ class AlertPage extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Background banner
-            Stack(
-              children: [
-                Container(
-                  height: 200,
-                ),
-              ],
-            ),
-
+            Stack(children: [Container(height: 150)]),
             const SizedBox(height: 30),
 
-            // Alert box
+            // --- "I Am Alert" Camera Box ---
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
@@ -4088,39 +4765,117 @@ class AlertPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      GestureDetector(
-                        onTap: () => _openCamera(context),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: const [
-                            Image(
-                              image: AssetImage('assets/i alert.png'),
-                              height: 100,
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              "I am alert",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: Colors.black,
-                              ),
-                              textAlign: TextAlign.center,
+                  child:
+                  GestureDetector(
+                    onTap: _openCamera,
+                    child: Column(
+                      children: [
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(
+                            center: Alignment(-0.3, -0.3),
+                            radius: 0.8,
+                            colors: [
+                              Color(0xFFE0E0E0), // light gray center
+                              Color(0xFFB0B0B0), // darker edge
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.5),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
                             ),
                           ],
                         ),
+                        child: const Center(
+                          child: Text(
+                            'IN',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
                       ),
-                    ],
+
+
+
+                        // Image(
+                        //   image: AssetImage('assets/out punch.png'),
+                        //   height: 100,
+                        // ),
+                        SizedBox(height: 10),
+                        Text(
+                          "Punch",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.black,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
 
             const SizedBox(height: 40),
+
+            // --- Panic Alert Table ---
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: alertData.isEmpty
+                  ? const Center(child: Text("No panic alerts found."))
+                  : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columnSpacing: 35,
+                  headingRowColor:
+                  MaterialStateProperty.all(const Color(0xFFF464BB)),
+                  headingTextStyle: const TextStyle(color: Colors.white),
+                  columns: const [
+                    DataColumn(label: Text("Date")),
+                    DataColumn(label: Text("EmpName")),
+                    DataColumn(label: Text("Action")),
+                  ],
+                  rows: alertData.map((alert) {
+                    return DataRow(cells: [
+                      DataCell(Text(alert["date"]!)),
+                      DataCell(Text(alert["name"]!)),
+                      DataCell(
+                        InkWell(
+                          onTap: () {
+                            final latitude = alert["latitude"];
+                            final longitude = alert["longitude"];
+                            if (latitude != null && longitude != null) {
+                              _openMap(latitude.toString(),
+                                  longitude.toString());
+                            }
+                          },
+                          child: Row(
+                            children: const [
+                              Icon(Icons.remove_red_eye,
+                                  color: Colors.blue),
+                              SizedBox(width: 4),
+                              Text("View",
+                                  style: TextStyle(color: Colors.blue)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ]);
+                  }).toList(),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -4128,21 +4883,10 @@ class AlertPage extends StatelessWidget {
   }
 }
 
-class PreviewPage extends StatelessWidget {
-  final String imagePath;
-
-  const PreviewPage({super.key, required this.imagePath});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Captured Image')),
-      body: Center(child: Image.file(File(imagePath))),
-    );
-  }
+class _cameraController {
+  static void dispose() {}
 }
 
-// Optional helper class to keep headers DRY
 class ApiHeaders {
   static Map<String, String> getHeaders(String token) {
     return {
@@ -4161,7 +4905,7 @@ class LogPage extends StatefulWidget {
   State<LogPage> createState() => _LogPageState();
 }
 
-class _LogPageState extends State<LogPage> {
+class _LogPageState extends State<LogPage> with TickerProviderStateMixin {
   String? empId;
   String? empName;
 
@@ -4184,12 +4928,23 @@ class _LogPageState extends State<LogPage> {
   late String selectedMonth;
 
   List<Map<String, dynamic>> punchLogs = [];
+  List<Map<String, dynamic>> animatedLogs = [];
+  List<AnimationController> _controllers = [];
+  List<Animation<Offset>> _animations = [];
 
   @override
   void initState() {
     super.initState();
     selectedMonth = months[selectedMonthIndex - 1];
     fetchDetails(selectedMonthIndex, DateTime.now().year);
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   String getWeekdayFromDate(DateTime date) {
@@ -4200,10 +4955,7 @@ class _LogPageState extends State<LogPage> {
   Future<void> fetchDetails(int month, int year) async {
     final prefs = await SharedPreferences.getInstance();
     final String? token = prefs.getString('apiToken');
-    if (token == null) {
-      print('No token found. Please login first.');
-      return;
-    }
+    if (token == null) return;
 
     empId = prefs.getString('userName') ?? empId;
     empName = prefs.getString('empName') ?? widget.name;
@@ -4219,15 +4971,23 @@ class _LogPageState extends State<LogPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
         if (data is List) {
-          List<Map<String, dynamic>> logList = [];
+          // Clean up
+          for (final c in _controllers) {
+            c.dispose();
+          }
+          _controllers.clear();
+          _animations.clear();
+          punchLogs.clear();
+          animatedLogs.clear();
+
+          setState(() {}); // show blank
 
           for (var punch in data) {
             String dateTime = punch['swipeDateTime'];
             DateTime dt = DateTime.parse(dateTime);
 
-            logList.add({
+            punchLogs.add({
               'date': dt.day.toString().padLeft(2, '0'),
               'day': getWeekdayFromDate(dt),
               'time': dateTime.substring(11, 19),
@@ -4237,47 +4997,37 @@ class _LogPageState extends State<LogPage> {
             });
           }
 
-          // 🔽 Reverse the list to make it descending (most recent first)
-          logList = logList.reversed.toList();
+          // Descending order (latest first)
+          punchLogs = punchLogs.reversed.toList();
 
-          setState(() {
-            punchLogs = logList;
-          });
-        } else {
-          print("Unexpected data format");
+          for (int i = 0; i < punchLogs.length; i++) {
+            final controller = AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 500),
+            );
+            final animation = Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).animate(
+                CurvedAnimation(parent: controller, curve: Curves.easeOut));
+
+            _controllers.add(controller);
+            _animations.add(animation);
+          }
+
+          for (int i = 0; i < punchLogs.length; i++) {
+            await Future.delayed(const Duration(milliseconds: 250));
+            if (!mounted) return;
+            _controllers[i].forward();
+            setState(() {
+              animatedLogs.add(punchLogs[i]);
+            });
+          }
         }
-      } else {
-        print('Failed to fetch log data. Status: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching log data: $e');
     }
-  }
-
-  Widget _drawerItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        elevation: 2,
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white,
-        child: ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Colors.blue.shade100,
-            child: Icon(icon, color: Colors.blue.shade800),
-          ),
-          title: Text(label),
-          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          onTap: onTap,
-        ),
-      ),
-    );
   }
 
   @override
@@ -4286,85 +5036,51 @@ class _LogPageState extends State<LogPage> {
       appBar: AppBar(
         title:
             const Text("Activity Log", style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF0F4787),
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Builder(
             builder: (context) => IconButton(
-              icon: Icon(Icons.menu_open),
-              onPressed: () {
-                Scaffold.of(context).openEndDrawer();
-              },
+              icon: const Icon(Icons.menu_open, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
             ),
           ),
         ],
-        backgroundColor: const Color(0xFF0F4787),
-        iconTheme: const IconThemeData(color: Colors.white),
       ),
       endDrawer: Drawer(
         child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
+            padding: const EdgeInsets.all(12),
             children: [
               Container(
-                width: double.infinity,
-                height: 60,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Colors.blue.shade800, Colors.blueAccent],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
                   ),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: const Text(
                   'Menu',
                   style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [
-                    _drawerItem(
-                      icon: Icons.calendar_today,
-                      label: 'Holidays',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const HolidayPage()),
-                        );
-                      },
-                    ),
-                    _drawerItem(
-                      icon: Icons.compare_arrows,
-                      label: 'Approver & Requestor',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const ApproverPage()),
-                        );
-                      },
-                    ),
-                    _drawerItem(
-                      icon: Icons.dashboard,
-                      label: 'Dashboard',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const DashboardPage()),
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              _drawerItem(
+                icon: Icons.calendar_today,
+                label: 'Holidays',
+                onTap: () {},
+              ),
+              _drawerItem(
+                icon: Icons.compare_arrows,
+                label: 'Approver & Requestor',
+                onTap: () {},
+              ),
+              _drawerItem(
+                icon: Icons.dashboard,
+                label: 'Dashboard',
+                onTap: () {},
               ),
             ],
           ),
@@ -4394,14 +5110,12 @@ class _LogPageState extends State<LogPage> {
                           return DropdownMenuItem<String>(
                             value: month,
                             child: Center(
-                              child: Text(
-                                month,
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ),
+                                child: Text(month,
+                                    style:
+                                        const TextStyle(color: Colors.white))),
                           );
                         }).toList(),
-                        onChanged: (String? value) {
+                        onChanged: (value) {
                           if (value != null) {
                             setState(() {
                               selectedMonth = value;
@@ -4423,13 +5137,10 @@ class _LogPageState extends State<LogPage> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0F4787),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text(
-                    'View',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
+                  child:
+                      const Text('View', style: TextStyle(color: Colors.white)),
                 ),
               ],
             ),
@@ -4437,127 +5148,126 @@ class _LogPageState extends State<LogPage> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: punchLogs.length,
+              itemCount: animatedLogs.length,
               itemBuilder: (context, index) {
-                final log = punchLogs[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 6,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 50,
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE0E0E0),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              log['date'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                            Text(
-                              log['day'],
-                              style: const TextStyle(color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Employee ID : ${empId ?? 'N/A'}",
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "Name : ${widget.name}",
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F4787),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    log['time'],
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                final log = animatedLogs[index];
+                final animation = _animations[index];
+
+                return SlideTransition(
+                  position: animation,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 6,
+                            offset: Offset(0, 3))
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 50,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0E0E0),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(log['date'],
+                                  style: const TextStyle(
                                       fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: log['color'] == 'green'
-                                        ? Colors.green
-                                        : Colors.red,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    log['status'],
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    log['location'],
-                                    style: const TextStyle(
-                                        fontSize: 14, color: Colors.black87),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                      fontSize: 18)),
+                              Text(log['day'],
+                                  style: const TextStyle(color: Colors.grey)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Employee ID : ${empId ?? 'N/A'}",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Text("Name : ${widget.name}",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _pill(log['time'], const Color(0xFF0F4787)),
+                                  const SizedBox(width: 8),
+                                  _pill(
+                                      log['status'],
+                                      log['color'] == 'green'
+                                          ? Colors.green
+                                          : Colors.red),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(log['location'],
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.black87)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _pill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+      child: Text(text,
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _drawerItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        elevation: 2,
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: Colors.blue.shade100,
+            child: Icon(icon, color: Colors.blue.shade800),
+          ),
+          title: Text(label),
+          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onTap: onTap,
+        ),
       ),
     );
   }
@@ -6600,15 +7310,13 @@ class LeaveHistoryPage extends StatefulWidget {
   State<LeaveHistoryPage> createState() => _LeaveHistoryPageState();
 }
 
-class _LeaveHistoryPageState extends State<LeaveHistoryPage> {
-  List<Map<String, dynamic>> leaveHistory = [];
+class _LeaveHistoryPageState extends State<LeaveHistoryPage>
+    with TickerProviderStateMixin {
+  List<Map<String, dynamic>> fullLeaveHistory = [];
+  List<Map<String, dynamic>> animatedLeaveHistory = [];
+  List<AnimationController> _controllers = [];
+  List<Animation<Offset>> _animations = [];
   bool isLoading = true;
-
-  get id => null;
-  void main() {
-    var obj = id();
-    print(obj.id); // prints: null
-  }
 
   @override
   void initState() {
@@ -6621,31 +7329,60 @@ class _LeaveHistoryPageState extends State<LeaveHistoryPage> {
     final tokenApi = prefs.getString('apiToken');
 
     if (tokenApi == null) {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
       return;
     }
 
     final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Leave/GetAllLeave');
-    final response = await http.get(
-      url,
-      headers: {
-        'Authorization': 'Bearer $tokenApi',
-        'Content-Type': 'application/json',
-      },
-    );
+    final response = await http.get(url, headers: {
+      'Authorization': 'Bearer $tokenApi',
+      'Content-Type': 'application/json',
+    });
 
     if (response.statusCode == 200) {
       final List<dynamic> data = jsonDecode(response.body);
+
+      for (final c in _controllers) {
+        c.dispose();
+      }
+      _controllers.clear();
+      _animations.clear();
+
+      fullLeaveHistory =
+          data.cast<Map<String, dynamic>>().reversed.toList(); // descending
+
+      // Create controllers for animations
+      for (int i = 0; i < fullLeaveHistory.length; i++) {
+        final controller = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 600),
+        );
+
+        final animation = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: controller, curve: Curves.easeOut));
+
+        _controllers.add(controller);
+        _animations.add(animation);
+      }
+
       setState(() {
-        leaveHistory = data.cast<Map<String, dynamic>>().reversed.toList();
+        animatedLeaveHistory.clear(); // Show empty screen first
         isLoading = false;
       });
+
+      // Show one by one with delay
+      for (int i = 0; i < fullLeaveHistory.length; i++) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        _controllers[i].forward();
+        setState(() {
+          animatedLeaveHistory.add(fullLeaveHistory[i]);
+        });
+      }
     } else {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to load leave history.')),
       );
@@ -6655,44 +7392,47 @@ class _LeaveHistoryPageState extends State<LeaveHistoryPage> {
   Future<void> cancelLeave(String leaveId) async {
     final prefs = await SharedPreferences.getInstance();
     final tokenApi = prefs.getString('apiToken');
-
     if (tokenApi == null) return;
 
     final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Leave/CancelLeave');
-
     final response = await http.post(
       url,
       headers: {
         'Authorization': 'Bearer $tokenApi',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({
-        "id": leaveId,
-      }),
+      body: jsonEncode({"id": leaveId}),
     );
 
     if (response.statusCode == 200) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Leave cancelled successfully."),
-          backgroundColor: Colors.green,
-        ),
+            content: Text("Leave cancelled successfully."),
+            backgroundColor: Colors.green),
       );
-      fetchLeaveHistory(); // Refresh the list
+      fetchLeaveHistory();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to cancel leave."),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(
+            content: Text("Failed to cancel leave."),
+            backgroundColor: Colors.red),
       );
     }
   }
 
   String formatDate(String date) {
     final parsed = DateTime.tryParse(date);
-    if (parsed == null) return date;
-    return "${parsed.day.toString().padLeft(2, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.year}";
+    return parsed == null
+        ? date
+        : "${parsed.day.toString().padLeft(2, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.year}";
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -6709,8 +7449,8 @@ class _LeaveHistoryPageState extends State<LeaveHistoryPage> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => ApplyLeavePage(
-                    employeeId: 'empid',
-                    token: 'apiToken',
+                    employeeId: 'empid', // replace dynamically
+                    token: 'apiToken', // replace dynamically
                   ),
                 ),
               );
@@ -6720,60 +7460,60 @@ class _LeaveHistoryPageState extends State<LeaveHistoryPage> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : leaveHistory.isEmpty
+          : animatedLeaveHistory.isEmpty
               ? const Center(child: Text("No leave applications found."))
               : ListView.builder(
-                  itemCount: leaveHistory.length,
+                  itemCount: animatedLeaveHistory.length,
                   itemBuilder: (context, index) {
-                    final entry = leaveHistory[index];
+                    final entry = animatedLeaveHistory[index];
                     final status = entry['leaveEntryStatus'] ?? 'Pending';
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ListTile(
-                              title: Text(
-                                "${entry['leaveType'] ?? 'N/A'} (${entry['days'] ?? 0} day${(entry['days'] ?? 0) > 1 ? 's' : ''})",
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text("Reason: ${entry['title'] ?? 'N/A'}"),
-                                  Text(
-                                      "From: ${formatDate(entry['startOn'] ?? '')}  To: ${formatDate(entry['endOn'] ?? '')}"),
-                                  Text(
-                                      "Approver: ${entry['approvedUserRealName'] ?? 'N/A'}"),
-                                  Text("Status: $status"),
-                                ],
-                              ),
-                            ),
-                            if (status.toLowerCase() == 'pending')
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton.icon(
-                                  icon: const Icon(Icons.cancel,
-                                      color: Colors.red),
-                                  label: const Text(
-                                    "Cancel",
-                                    style: TextStyle(color: Colors.red),
-                                  ),
-                                  onPressed: () {
-                                    final leaveId =
-                                        entry['id']?.toString() ?? '';
-                                    if (leaveId.isNotEmpty) {
-                                      print(leaveId);
-                                      cancelLeave(leaveId);
-                                    }
-                                  },
+
+                    return SlideTransition(
+                      position: _animations[index],
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ListTile(
+                                title: Text(
+                                  "${entry['leaveType'] ?? 'N/A'} (${entry['days'] ?? 0} day${(entry['days'] ?? 0) > 1 ? 's' : ''})",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
                                 ),
-                              )
-                          ],
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Reason: ${entry['title'] ?? 'N/A'}"),
+                                    Text(
+                                        "From: ${formatDate(entry['startOn'] ?? '')}  To: ${formatDate(entry['endOn'] ?? '')}"),
+                                    Text(
+                                        "Approver: ${entry['approvedUserRealName'] ?? 'N/A'}"),
+                                    Text("Status: $status"),
+                                  ],
+                                ),
+                              ),
+                              if (status.toLowerCase() == 'pending')
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    icon: const Icon(Icons.cancel,
+                                        color: Colors.red),
+                                    label: const Text("Cancel",
+                                        style: TextStyle(color: Colors.red)),
+                                    onPressed: () {
+                                      final leaveId =
+                                          entry['id']?.toString() ?? '';
+                                      if (leaveId.isNotEmpty)
+                                        cancelLeave(leaveId);
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -6842,7 +7582,8 @@ class _BiometricPageState extends State<BiometricPage> {
           if (context.mounted) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
+              MaterialPageRoute(
+                  builder: (context) => const HomePage()),
             );
           }
         }
@@ -7081,107 +7822,19 @@ class LogoutPage extends StatelessWidget {
 //   }
 // }
 
-class PanicAlertPage extends StatefulWidget {
-  String name;
-  PanicAlertPage({super.key, required this.name});
-  @override
-  State createState() => PanicAlertPageState();
-}
-
-class PanicAlertPageState extends State<PanicAlertPage> {
-  List<dynamic> alertData = [];
-  @override
-  void initState() {
-    super.initState();
-    fetchAllLogs();
-  }
-
-  void fetchAllLogs() async {
-    List<LogEntry> logs = await LogDatabase.instance.getLogs();
-
-    for (var log in logs) {
-      setState(() {
-        alertData = logs
-            .map((log) => {
-                  'date': log.date + '\n' + log.time,
-                  'name': widget.name,
-                  'latitude': log.latitude,
-                  'longitude': log.longitude,
-                })
-            .toList();
-      });
-      print('ID: ${log.id}, Date: ${log.date}, Time: ${log.time}, '
-          'Lat: ${log.latitude}, Long: ${log.longitude}');
-    }
-  }
-
-  void _openMap(String latitude, String longitude) async {
-    final Uri googleMapUrl = Uri.parse(
-        "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude");
-
-    try {
-      await launchUrl(googleMapUrl, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      print("Failed to launch map: $e");
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Panic Alert", style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF21465B),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: DataTable(
-          columnSpacing: 53,
-          headingRowColor: MaterialStateProperty.all(const Color(0xFFF464BB)),
-          headingTextStyle: const TextStyle(color: Colors.white),
-          columns: const [
-            DataColumn(label: Text("Date")),
-            DataColumn(label: Text("EmpName")),
-            DataColumn(label: Text("Action")),
-          ],
-          rows: alertData.map((alert) {
-            return DataRow(cells: [
-              DataCell(Text(alert["date"]!)),
-              DataCell(Text(alert["name"]!)),
-              DataCell(
-                InkWell(
-                  onTap: () {
-                    final latitude = alert["latitude"];
-                    final longitude = alert["longitude"];
-                    if (latitude != null && longitude != null) {
-                      _openMap(latitude.toString(), longitude.toString());
-                    }
-                  },
-                  child: Row(
-                    children: const [
-                      Icon(Icons.remove_red_eye, color: Colors.blue),
-                      SizedBox(width: 4),
-                      Text("View", style: TextStyle(color: Colors.blue)),
-                    ],
-                  ),
-                ),
-              ),
-            ]);
-          }).toList(),
-        ),
-      ),
-    );
-  }
-}
-
 class PendingPage extends StatefulWidget {
   @override
   _PendingPageState createState() => _PendingPageState();
 }
 
-class _PendingPageState extends State<PendingPage> {
-  List<dynamic> pendingList = [];
+class _PendingPageState extends State<PendingPage>
+    with TickerProviderStateMixin {
+  List<dynamic> fullPendingList = [];
+  List<dynamic> animatedPendingList = [];
+
+  List<AnimationController> _controllers = [];
+  List<Animation<Offset>> _animations = [];
+
   bool isLoading = true;
   String? tokenApi;
 
@@ -7191,20 +7844,20 @@ class _PendingPageState extends State<PendingPage> {
     loadTokenAndFetchData();
   }
 
-    Future<void> loadTokenAndFetchData() async {
+  Future<void> loadTokenAndFetchData() async {
     final prefs = await SharedPreferences.getInstance();
     tokenApi = prefs.getString('apiToken') ?? '';
     await fetchPendingData();
   }
 
   Future<void> fetchPendingData() async {
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetPendingRequest');
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetPendingRequest');
 
-    // Body based on LeaveEntryFilterInputModel
     final Map<String, dynamic> requestBody = {
       "EmployeeCategoryId": null,
-      "EmployeeId": "", // Provide actual data if needed
-      "LeaveEntryTypeId": "", // Provide actual data
+      "EmployeeId": "",
+      "LeaveEntryTypeId": "",
       "LeaveTypeId": 0,
       "Date": ""
     };
@@ -7219,18 +7872,58 @@ class _PendingPageState extends State<PendingPage> {
     );
 
     if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      for (final c in _controllers) {
+        c.dispose();
+      }
+      _controllers.clear();
+      _animations.clear();
+
+      fullPendingList = data;
+
+      for (int i = 0; i < fullPendingList.length; i++) {
+        final controller = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 500),
+        );
+
+        final animation = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: controller, curve: Curves.easeOut));
+
+        _controllers.add(controller);
+        _animations.add(animation);
+      }
+
       setState(() {
-        pendingList = jsonDecode(response.body);
+        animatedPendingList.clear(); // Empty list initially
         isLoading = false;
       });
+
+      for (int i = 0; i < fullPendingList.length; i++) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        _controllers[i].forward();
+        setState(() {
+          animatedPendingList.add(fullPendingList[i]);
+        });
+      }
     } else {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to load pending data')),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -7239,53 +7932,69 @@ class _PendingPageState extends State<PendingPage> {
       appBar: AppBar(title: const Text("Pending List")),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-        itemCount: pendingList.length,
-        itemBuilder: (context, index) {
-          final item = pendingList[index];
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            elevation: 3,
-            child: ListTile(
-              title: Text(
-                "${item['employeeId']} - ${item['id']}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Reason: ${item['title']}"),
-                  Text("Type: ${item['LeaveEntryType']}"),
-                  Text("Leave On: ${item['startOn']}"),
-                  Text("Created On: ${item['createdOn']}"),
-                  Text("Leave Type: ${item['leaveType']}"),
-                ],
-              ),
-              trailing: ElevatedButton(
-                child: const Text("Details"),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => LeaveDetailsPage(
-                        leaveData: item, requestId: null,
+          : animatedPendingList.isEmpty
+              ? const Center(child: Text("No pending requests"))
+              : ListView.builder(
+                  itemCount: animatedPendingList.length,
+                  itemBuilder: (context, index) {
+                    final item = animatedPendingList[index];
+                    final animation = _animations[index];
+
+                    return SlideTransition(
+                      position: animation,
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        elevation: 3,
+                        child: ListTile(
+                          title: Text(
+                            "${item['employeeId']} - ${item['id']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Reason: ${item['title'] ?? 'N/A'}"),
+                              Text("Type: ${item['leaveEntryType'] ?? 'N/A'}"),
+                              Text("Leave On: ${item['startOn'] ?? ''}"),
+                              Text("Created On: ${item['createdOn'] ?? ''}"),
+                              Text("Leave Type: ${item['leaveType'] ?? 'N/A'}"),
+                            ],
+                          ),
+                          trailing: ElevatedButton(
+                            child: const Text("Details"),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => LeaveDetailsPage(
+                                    leaveData: item,
+                                    requestId: item['id'],
+                                    actionButton: 'true',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
+                    );
+                  },
+                ),
     );
   }
 }
 
 class LeaveDetailsPage extends StatefulWidget {
   final Map<String, dynamic>? leaveData;
+  String? actionButton;
 
-  const LeaveDetailsPage({super.key, this.leaveData, required requestId});
+  LeaveDetailsPage({
+    Key? key,
+    this.leaveData,
+    required requestId,
+    this.actionButton,
+  }) : super(key: key);
 
   @override
   State<LeaveDetailsPage> createState() => _LeaveDetailsState();
@@ -7294,45 +8003,75 @@ class LeaveDetailsPage extends StatefulWidget {
 class _LeaveDetailsState extends State<LeaveDetailsPage> {
   String selectedAction = 'Approve';
   final TextEditingController _remarksController = TextEditingController();
+  String? tokenApi;
+  int? approverType;
 
-  void handleSubmit() {
-    if (selectedAction == 'Approve') {
-      // Handle approve logic
-      print("Approved");
-    } else if (selectedAction == 'Reject') {
-      final remarks = _remarksController.text.trim();
-      if (remarks.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Please enter remarks for rejection")),
-        );
-        return;
-      }
-      // Handle reject logic with remarks
-      print("Rejected with remarks: $remarks");
+  List<dynamic> rawPunchList = [];
+  bool showRawPunch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadTokenAndFetchData();
+  }
+
+  Future<void> loadTokenAndFetchData() async {
+    final prefs = await SharedPreferences.getInstance();
+    tokenApi = prefs.getString('apiToken') ?? '';
+    await fetchPendingData();
+
+    if (widget.leaveData?['leaveEntryType'] == 'Credit Request') {
+      showRawPunch = true;
+      await fetchRawPunchData(widget.leaveData!['id']);
+    }
+  }
+
+  Future<void> fetchPendingData() async {
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetLeaveDetails?id=${widget.leaveData!['id']}');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $tokenApi',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      setState(() {
+        approverType = jsonDecode(response.body)['id'];
+      });
+    }
+  }
+
+  Future<void> fetchRawPunchData(int id) async {
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetRawPunchDetails?id=${widget.leaveData!['id']}');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $tokenApi',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      setState(() {
+        rawPunchList = data;
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please select an action")),
+        const SnackBar(content: Text("Failed to load punch data")),
       );
     }
   }
 
-
-  Future<void> approveOrRejectRequest({
-    required BuildContext context,
-    required String actionId,
-    required String remarks,
-    required int requestId,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final tokenApi = prefs.getString('apiToken') ?? '';
-
+  Future<void> fetchPendingApprove(String approverType) async {
     final url = Uri.parse(
-        'http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetLeaveDetails?id=$widget');
-    final body = {
-      "SelectedIds": [requestId],
-      "ActionId": actionId,
-      "Remarks": remarks,
-    };
+        'http://hrmwebapi.lemeniz.com/api/LeaveApproval/PendingApproval');
 
     final response = await http.post(
       url,
@@ -7340,25 +8079,50 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
         'Authorization': 'Bearer $tokenApi',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode(body),
+      body: jsonEncode({
+        "SelectedIds": [widget.leaveData!['id']],
+        "ActionId": approverType,
+        "Remarks": selectedAction == 'Reject'
+            ? _remarksController.text.trim()
+            : "Approved by manager"
+      }),
     );
 
     if (response.statusCode == 200) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("$actionId completed")),
+        SnackBar(
+          content: Text(approverType == 'A'
+              ? "Approved Successfully"
+              : "Rejected Successfully"),
+          backgroundColor: Colors.green,
+        ),
       );
-      Navigator.pop(context); // go back after success
+      Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to perform action")),
+        const SnackBar(content: Text("Error"), backgroundColor: Colors.red),
       );
+    }
+  }
+
+  void handleSubmit() {
+    if (selectedAction == 'Approve') {
+      fetchPendingApprove('A');
+    } else if (selectedAction == 'Reject') {
+      final remarks = _remarksController.text.trim();
+      if (remarks.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please enter remarks for rejection")),
+        );
+        return;
+      }
+      fetchPendingApprove('R');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final leaveData = widget.leaveData ?? {};
-    final int requestId = leaveData['id'] ?? 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Leave Details")),
@@ -7370,59 +8134,157 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
             Text("Employee ID: ${leaveData['employeeId'] ?? ''}"),
             Text("Name: ${leaveData['createUserRealName'] ?? ''}"),
             Text("Reason: ${leaveData['title'] ?? ''}"),
-            Text("Type: ${leaveData['LeaveEntryType'] ?? ''}"),
             Text("Leave On: ${leaveData['startOn'] ?? ''}"),
+            Text("Type: ${leaveData['leaveEntryType'] ?? ''}"),
             Text("Created On: ${leaveData['createdOn'] ?? ''}"),
             const SizedBox(height: 20),
-            const Text("Select Action:"),
-            Row(
-              children: [
-                Radio<String>(
-                  value: 'Approve',
-                  groupValue: selectedAction,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedAction = value!;
-                    });
-                  },
+            if (widget.actionButton == 'true') ...[
+              const Text("Select Action:"),
+              Row(
+                children: [
+                  Radio<String>(
+                    value: 'Approve',
+                    groupValue: selectedAction,
+                    onChanged: (value) =>
+                        setState(() => selectedAction = value!),
+                  ),
+                  const Text("Approve"),
+                  Radio<String>(
+                    value: 'Reject',
+                    groupValue: selectedAction,
+                    onChanged: (value) =>
+                        setState(() => selectedAction = value!),
+                  ),
+                  const Text("Reject"),
+                ],
+              ),
+              if (selectedAction == 'Reject') ...[
+                const SizedBox(height: 10),
+                const Text("Remarks",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                TextField(
+                  controller: _remarksController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: "Enter remarks for rejection",
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                const Text("Approve"),
-                Radio<String>(
-                  value: 'Reject',
-                  groupValue: selectedAction,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedAction = value!;
-                    });
-                  },
-                ),
-                const Text("Reject"),
               ],
-            ),
-            if (selectedAction == 'Reject') ...[
-              const SizedBox(height: 10),
-              const Text(
-                  "Remarks", style: TextStyle(fontWeight: FontWeight.bold)),
-              TextField(
-                controller: _remarksController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: "Enter remarks for rejection",
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 20),
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: handleSubmit,
+                  icon: const Icon(Icons.send),
+                  label: const Text("Submit"),
                 ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            if (showRawPunch && rawPunchList.isNotEmpty) ...[
+              const Text("Raw Punch Details",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 10),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: rawPunchList.length,
+                itemBuilder: (context, index) {
+                  final log = rawPunchList[index];
+                  final swipeTime = log['swipeDateTime']?.toString();
+                  final DateTime? dateTime = swipeTime != null
+                      ? DateTime.tryParse(swipeTime)?.toLocal()
+                      : null;
+
+                  final date = dateTime != null
+                      ? DateFormat('id').format(dateTime)
+                      : '1';
+                  final day = dateTime != null
+                      ? DateFormat('EEE').format(dateTime)
+                      : '1';
+                  final time = swipeTime;
+                  final status = log['punch'] ?? 'N/A';
+                  final location = log['location'] ?? '';
+                  final color =
+                  (status == 'IN') ? Colors.green : Colors.red;
+                  final empId = log['employeeId']?.toString() ?? '';
+                  final empName = log['name']?.toString() ?? '';
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 50,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0E0E0),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(date,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18)),
+                              Text(day,
+                                  style: const TextStyle(color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Employee ID : $empId",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 4),
+                              Text("Name : $empName",
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _pill(time!, const Color(0xFF0F4787)),
+                                  const SizedBox(width: 8),
+                                  _pill(status, color),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(location,
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.black87)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
-            const SizedBox(height: 20),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: handleSubmit,
-                icon: const Icon(Icons.send),
-                label: const Text("Submit"),
-              ),
-            ),
-            const SizedBox(height: 10),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _pill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 12),
       ),
     );
   }
@@ -7434,8 +8296,14 @@ class ApprovedPage extends StatefulWidget {
   State<ApprovedPage> createState() => _ApprovedPageState();
 }
 
-class _ApprovedPageState extends State<ApprovedPage> {
-  List<dynamic> approvedList = [];
+class _ApprovedPageState extends State<ApprovedPage>
+    with TickerProviderStateMixin {
+  List<dynamic> fullApprovedList = [];
+  List<dynamic> animatedApprovedList = [];
+
+  List<AnimationController> _controllers = [];
+  List<Animation<Offset>> _animations = [];
+
   bool isLoading = true;
 
   @override
@@ -7447,7 +8315,8 @@ class _ApprovedPageState extends State<ApprovedPage> {
   Future<void> fetchApprovedLeaves() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetApproved');
+    final url =
+        Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetApproved');
 
     final response = await http.get(url, headers: {
       'Authorization': 'Bearer $token',
@@ -7455,14 +8324,62 @@ class _ApprovedPageState extends State<ApprovedPage> {
 
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
+
+      data.sort((a, b) {
+        DateTime dateA = DateTime.parse(a['startOn']);
+        DateTime dateB = DateTime.parse(b['startOn']);
+        return dateA.compareTo(dateB); // Ascending
+      });
+
+      for (final c in _controllers) {
+        c.dispose();
+      }
+      _controllers.clear();
+      _animations.clear();
+
+      fullApprovedList = data;
+
+      for (int i = 0; i < fullApprovedList.length; i++) {
+        final controller = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 500),
+        );
+        final animation = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: controller, curve: Curves.easeOut));
+
+        _controllers.add(controller);
+        _animations.add(animation);
+      }
+
       setState(() {
-        approvedList = data;
+        animatedApprovedList.clear(); // Show empty page first
         isLoading = false;
       });
+
+      for (int i = 0; i < fullApprovedList.length; i++) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        _controllers[i].forward();
+        setState(() {
+          animatedApprovedList.add(fullApprovedList[i]);
+        });
+      }
     } else {
-      // handle error
       setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load approved leaves')),
+      );
     }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -7471,183 +8388,84 @@ class _ApprovedPageState extends State<ApprovedPage> {
       appBar: AppBar(title: const Text("Approved List")),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-        itemCount: ApprovedList.length,
-        itemBuilder: (context, index) {
-          final item = approvedList[index];
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            elevation: 3,
-            child: ListTile(
-              title: Text(
-                "${item['employeeId']} - ${item['id']}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Reason: ${item['title']}"),
-                  Text("Type: ${item['LeaveEntryType']}"),
-                  Text("Leave On: ${item['startOn']}"),
-                  Text("Created On: ${item['createdOn']}"),
-                  Text("Leave Type: ${item['leaveType']}"),
-                ],
-              ),
-              trailing: ElevatedButton(
-                child: const Text("Details"),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => LeaveDetailsPage(
-                        leaveData: item, requestId: null,
+          : animatedApprovedList.isEmpty
+              ? const Center(child: Text("No approved leaves found"))
+              : ListView.builder(
+                  itemCount: animatedApprovedList.length,
+                  itemBuilder: (context, index) {
+                    final item = animatedApprovedList[index];
+                    final animation = _animations[index];
+
+                    return SlideTransition(
+                      position: animation,
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        elevation: 3,
+                        child: ListTile(
+                          title: Text(
+                            "${item['employeeId']} - ${item['id']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Reason: ${item['title'] ?? 'N/A'}"),
+                              Text("Type: ${item['leaveEntryType'] ?? 'N/A'}"),
+                              Text("Leave On: ${item['startOn'] ?? ''}"),
+                              Text("Created On: ${item['createdOn'] ?? ''}"),
+                              Text("Leave Type: ${item['leaveType'] ?? 'N/A'}"),
+                            ],
+                          ),
+                          trailing: ElevatedButton(
+                            child: const Text("Details"),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => LeaveDetailsPage(
+                                    leaveData: item,
+                                    requestId: null,
+                                    actionButton: 'false',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
+                    );
+                  },
+                ),
     );
   }
 }
-
-class ApprovedList {
-  static var length;
-}
-
-
-class ApprovedDetailsPage extends StatefulWidget {
-  final int leaveId;
-
-  const ApprovedDetailsPage({super.key, required this.leaveId});
-
-  @override
-  State<ApprovedDetailsPage> createState() => _ApprovedDetailsPageState();
-}
-
-class _ApprovedDetailsPageState extends State<ApprovedDetailsPage> {
-  Map<String, dynamic>? leaveDetails;
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    fetchLeaveDetails();
-  }
-
-  Future<void> fetchLeaveDetails() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('apiToken') ?? '';
-
-    final url = Uri.parse('https://hrmwebapi.lemeniz.com/api/LeaveApproval/GetLeaveDetails?id=${widget.leaveId}');
-
-    final response = await http.get(url, headers: {
-      'Authorization': 'Bearer $token',
-    });
-
-    if (response.statusCode == 200) {
-      setState(() {
-        leaveDetails = jsonDecode(response.body);
-        isLoading = false;
-      });
-    } else {
-      setState(() => isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Leave Details')),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : leaveDetails == null
-          ? Center(child: Text('No data found'))
-          : Padding(
-        padding: const EdgeInsets.all(16),
-        child: Table(
-          columnWidths: const {
-            0: FixedColumnWidth(150),
-            1: FlexColumnWidth(),
-          },
-          children: [
-            _buildRow('Employee ID', leaveDetails!['employeeId']),
-            _buildRow('Created on', leaveDetails!['createdOn']),
-            _buildRow('Reason', leaveDetails!['reason']),
-            _buildRow('Type', leaveDetails!['leaveType']),
-            _buildRow('Leave On', '${leaveDetails!['fromDate']} to ${leaveDetails!['toDate']}'),
-            _buildRow('Days', leaveDetails!['days'].toString()),
-            _buildRow('Leave Type', leaveDetails!['leaveCategory']),
-          ],
-        ),
-      ),
-    );
-  }
-
-  TableRow _buildRow(String title, String? value) {
-    return TableRow(
-      children: [
-        Padding(padding: const EdgeInsets.all(8.0), child: Text(title)),
-        Padding(padding: const EdgeInsets.all(8.0), child: Text(value ?? '-')),
-      ],
-    );
-  }
-}
-
-
-
-class LeaveRequest {
-  final int id;
-  final String empId;
-  final String createUserRealName;
-  final String title;
-  final String leaveType;
-  final String createdOn;
-
-  LeaveRequest({
-    required this.id,
-    required this.empId,
-    required this.createUserRealName,
-    required this.title,
-    required this.leaveType,
-    required this.createdOn,
-  });
-
-  factory LeaveRequest.fromJson(Map<String, dynamic> json) {
-    return LeaveRequest(
-      id: json['id'],
-      empId: json['empId'] ?? '',
-      createUserRealName: json['createUserRealName'] ?? '',
-      title: json['title'] ?? '',
-      leaveType: json['leaveType'] ?? '',
-      createdOn: json['createdOn'] ?? '',
-    );
-  }
-}
-
 
 class RejectedPage extends StatefulWidget {
   @override
   State<RejectedPage> createState() => _RejectedPageState();
 }
 
-class _RejectedPageState extends State<RejectedPage> {
-  List<dynamic> approvedList = [];
+class _RejectedPageState extends State<RejectedPage>
+    with TickerProviderStateMixin {
+  List<dynamic> fullRejectedList = [];
+  List<dynamic> animatedRejectedList = [];
+  List<AnimationController> _controllers = [];
+  List<Animation<Offset>> _animations = [];
+
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    fetchApprovedLeaves();
+    fetchRejectedLeaves();
   }
 
-  Future<void> fetchApprovedLeaves() async {
+  Future<void> fetchRejectedLeaves() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetRejected');
+    final url =
+        Uri.parse('http://hrmwebapi.lemeniz.com/api/LeaveApproval/GetRejected');
 
     final response = await http.get(url, headers: {
       'Authorization': 'Bearer $token',
@@ -7655,14 +8473,68 @@ class _RejectedPageState extends State<RejectedPage> {
 
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
+
+      // Sort ascending by date
+      data.sort((a, b) {
+        DateTime dateA = DateTime.parse(a['startOn']);
+        DateTime dateB = DateTime.parse(b['startOn']);
+        return dateA.compareTo(dateB);
+      });
+
+      // Dispose old animations
+      for (final c in _controllers) {
+        c.dispose();
+      }
+      _controllers.clear();
+      _animations.clear();
+
+      fullRejectedList = data;
+
+      for (int i = 0; i < fullRejectedList.length; i++) {
+        final controller = AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 600),
+        );
+        final animation = Tween<Offset>(
+          begin: const Offset(1.0, 0.0), // from right
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: controller,
+          curve: Curves.easeOut,
+        ));
+
+        _controllers.add(controller);
+        _animations.add(animation);
+      }
+
       setState(() {
-        approvedList = data;
+        animatedRejectedList.clear(); // start with empty
         isLoading = false;
       });
+
+      // One-by-one delayed animation
+      for (int i = 0; i < fullRejectedList.length; i++) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (!mounted) return;
+        _controllers[i].forward();
+        setState(() {
+          animatedRejectedList.add(fullRejectedList[i]);
+        });
+      }
     } else {
-      // handle error
       setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load rejected leaves')),
+      );
     }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
   @override
@@ -7671,128 +8543,55 @@ class _RejectedPageState extends State<RejectedPage> {
       appBar: AppBar(title: const Text("Rejected List")),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-        itemCount: ApprovedList.length,
-        itemBuilder: (context, index) {
-          final item = approvedList[index];
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            elevation: 3,
-            child: ListTile(
-              title: Text(
-                "${item['employeeId']} - ${item['id']}",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Reason: ${item['title']}"),
-                  Text("Type: ${item['LeaveEntryType']}"),
-                  Text("Leave On: ${item['startOn']}"),
-                  Text("Created On: ${item['createdOn']}"),
-                  Text("Leave Type: ${item['leaveType']}"),
-                ],
-              ),
-              trailing: ElevatedButton(
-                child: const Text("Details"),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => LeaveDetailsPage(
-                        leaveData: item, requestId: null,
+          : animatedRejectedList.isEmpty
+              ? const Center(child: Text("No rejected leaves found"))
+              : ListView.builder(
+                  itemCount: animatedRejectedList.length,
+                  itemBuilder: (context, index) {
+                    final item = animatedRejectedList[index];
+                    final animation = _animations[index];
+
+                    return SlideTransition(
+                      position: animation,
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        elevation: 3,
+                        child: ListTile(
+                          title: Text(
+                            "${item['employeeId']} - ${item['id']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Reason: ${item['title'] ?? 'N/A'}"),
+                              Text("Type: ${item['leaveEntryType'] ?? 'N/A'}"),
+                              Text("Leave On: ${item['startOn'] ?? ''}"),
+                              Text("Created On: ${item['createdOn'] ?? ''}"),
+                              Text("Leave Type: ${item['leaveType'] ?? 'N/A'}"),
+                            ],
+                          ),
+                          trailing: ElevatedButton(
+                            child: const Text("Details"),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => LeaveDetailsPage(
+                                    leaveData: item,
+                                    requestId: null,
+                                    actionButton: 'false',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-
-}
-
-class RejectedDetailsPage extends StatefulWidget {
-  final int requestId;
-
-  const RejectedDetailsPage({super.key, required this.requestId});
-
-  @override
-  State<RejectedDetailsPage> createState() => _RejectedDetailsPageState();
-}
-
-class _RejectedDetailsPageState extends State<RejectedDetailsPage> {
-  Map<String, dynamic>? leaveDetails;
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    fetchLeaveDetails();
-  }
-
-  Future<void> fetchLeaveDetails() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('apiToken') ?? '';
-
-    final url = Uri.parse("https://hrmwebapi.lemeniz.com/api/LeaveApproval/GetLeaveDetails?id=${widget.requestId}");
-    final response = await http.get(url, headers: {
-      'Authorization': 'Bearer $token',
-    });
-
-    if (response.statusCode == 200) {
-      setState(() {
-        leaveDetails = jsonDecode(response.body);
-        isLoading = false;
-      });
-    } else {
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Rejected Leave Details")),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : leaveDetails == null
-          ? Center(child: Text("No details found"))
-          : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            infoRow("Employee ID", leaveDetails!['empId']),
-            infoRow("Created On", leaveDetails!['createdOn']),
-            infoRow("Reason", leaveDetails!['reason']),
-            infoRow("Leave On", leaveDetails!['leaveOn']),
-            infoRow("Days", leaveDetails!['days'].toString()),
-            infoRow("Leave Type", leaveDetails!['leaveType']),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
-        children: [
-          Expanded(flex: 3, child: Text("$label:")),
-          Expanded(flex: 5, child: Text(value)),
-        ],
-      ),
+                    );
+                  },
+                ),
     );
   }
 }
-
-
-
