@@ -32,10 +32,14 @@ dependencies:
   firebase_core: ^3.13.1
   firebase_messaging: ^15.2.6
   cloud_firestore: ^5.6.8
-  android_alarm_manager_plus: ^4.0.7
   googleapis: ^14.0.0
   googleapis_auth: ^2.0.0
   confetti: ^0.8.0
+  google_mlkit_face_detection: ^0.13.1
+  camera: ^0.11.1
+  image: ^4.5.4
+  flutter_staggered_animations: ^1.1.1
+  tflite_flutter: ^0.11.0
 
 
 dev_dependencies:
@@ -48,19 +52,9 @@ flutter:
   assets:
     - assets/banner.png
     - assets/l logo.png
-    - assets/person.png
-    - assets/alert.png
     - assets/attendance.png
     - assets/leave.png
     - assets/log.png
-    - assets/submit.png
-    - assets/warning.png
-    - assets/wrong.png
-    - assets/know.png
-    - assets/i alert.png
-    - assets/i duty.png
-    - assets/tick.png
-    - assets/punch.png
     - assets/panic.png
     - assets/logout.png
     - assets/biometric.png
@@ -68,7 +62,6 @@ flutter:
     - assets/animations/blue bg.png
     - assets/animations/blue s bg.png
     - assets/thank you.gif
-    - assets/welcome.gif
     - assets/animations/girl eating.gif
     - assets/animations/girl sleep.gif
     - assets/animations/girl work.gif
@@ -86,12 +79,12 @@ flutter:
     - assets/animations/girl workout.gif
     - assets/animations/girl water.gif
     - assets/animations/boy leisure.gif
-    - assets/animations/balloon.gif
     - assets/animations/cake img.gif
-    - assets/animations/cake cut.gif
     - assets/approver.png
     - assets/pending.png
     - assets/rejected.png
+    - assets/in punch.png
+    - assets/out punch.png
 
 
 
