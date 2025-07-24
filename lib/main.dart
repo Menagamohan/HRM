@@ -448,6 +448,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int? approverCount;
   int? rejectedCount;
   String? profileImagePath;
+  File? _capturedImage;
 
   // in your HomePage class
   ConfettiController? _confettiController;
@@ -468,6 +469,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     checkApprover();
     checkPending();
     loadProfileImage();
+    getPhoto();
     controller1 = GifController(vsync: this);
     Future.delayed(const Duration(seconds: 1), () async {
       await fetchUser();
@@ -477,11 +479,61 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> loadProfileImage() async {
+  Future<File> base64ToFile(String base64String, String filename) async {
+    Uint8List bytes = base64Decode(base64String);
+
+    // Get temporary directory
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$filename');
+
+    // Write the bytes to the file
+    await file.writeAsBytes(bytes);
+
+    return file;
+  }
+
+  Future<void> getPhoto() async {
+    print('Get Photo');
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      profileImagePath = prefs.getString('profileImagePath');
-    });
+    final token = prefs.getString('apiToken');
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+
+
+        String base64Image = data['data'];
+        _capturedImage = await base64ToFile(base64Image, 'captured_photo.jpg');
+        setState(() {});
+
+      } else {
+        print('Failed to load photo. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching photo: $e');
+    }
+  }
+
+  Future<void> loadProfileImage() async {
+   if (widget.capturedImage != null) {
+     setState(() {
+       _capturedImage = widget.capturedImage;
+     });
+
+   } else if (widget.capturedImage == null) {
+     print('Photo is null');
+   }
   }
 
   void checkApprover() async {
@@ -942,8 +994,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   const SizedBox(height: 10),
                   CircleAvatar(
                     radius: 60,
-                    backgroundImage: widget.capturedImage != null
-                        ? FileImage(widget.capturedImage!)
+                    backgroundImage: _capturedImage != null
+                        ? FileImage(_capturedImage!)
                         : const AssetImage('assets/no_profile.jpg')
                             as ImageProvider,
                   ),
@@ -1224,15 +1276,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.person, color: Color(0xFF21465B)),
-                  onPressed: () {
-                    Navigator.push(
+                  onPressed: () async {
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => ProfilePage(
-                                genderPhoto: genderPhoto!,
-                                capturedImage: widget.capturedImage,
-                              )),
+                            genderPhoto: genderPhoto!,
+                          )),
                     );
+
+                    if (result != null) {
+                      // result contains _capturedImage
+                      setState(() {
+                        _capturedImage = result;
+                      });
+                    }
                   },
                 ),
               ),
@@ -1395,16 +1453,64 @@ class _ProfilePageState extends State<ProfilePage> {
   String? designationName;
   String? userName;
   bool _isLoading = true;
+  File? _capturedImage;
 
   @override
   void initState() {
     super.initState();
     Future.delayed(const Duration(seconds: 2), () {
       fetchUser();
+      getPhoto();
       setState(() {
         _isLoading = false;
       });
     });
+  }
+
+  Future<File> base64ToFile(String base64String, String filename) async {
+    Uint8List bytes = base64Decode(base64String);
+
+    // Get temporary directory
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$filename');
+
+    // Write the bytes to the file
+    await file.writeAsBytes(bytes);
+
+    return file;
+  }
+
+  Future<void> getPhoto() async {
+    print('Get Photo');
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('apiToken');
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+
+
+        String base64Image = data['data'];
+        _capturedImage = await base64ToFile(base64Image, 'captured_photo.jpg');
+        setState(() {});
+
+      } else {
+        print('Failed to load photo. Status: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching photo: $e');
+    }
   }
 
   void fetchUser() async {
@@ -1415,6 +1521,112 @@ class _ProfilePageState extends State<ProfilePage> {
       userName = prefs.getString('userName') ?? '';
     });
   }
+
+  Future<void> requestCameraPermissions() async {
+    await [
+      Permission.camera,
+      Permission.photos, // for iOS
+      Permission.storage, // Android only, may be ignored on Android 13+
+    ].request();
+  }
+
+  Future<void> editProfile(String base64Image, File imageFile) async {
+    const String apiUrl = 'http://hrmwebapi.lemeniz.com/api/Attendance/ProfilePhoto';
+
+    try {
+      // Get token from SharedPreferences
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String? token = prefs.getString('apiToken');
+
+      if (token == null) {
+        print('Token not found');
+        return;
+      }
+
+      // Request body
+      Map<String, dynamic> requestBody = {
+        "file": base64Image,
+      };
+
+      // Send POST request
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _capturedImage = imageFile;
+        });
+        SnackBar(content: Text('Profile updated successfully'),backgroundColor: Colors.green,);
+        print('Profile updated successfully');
+      } else {
+    SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,);
+        print('Failed to update profile: ${response.statusCode}');
+        print('Response body: ${response.body}');
+      }
+    } catch (e) {
+      print('Error: $e');
+    }
+  }
+
+  Future<void> _openCamera() async {
+    await requestCameraPermissions();
+    try {
+      final pickedFile = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+      );
+
+      if (pickedFile == null) return;
+
+      final File imageFile = File(pickedFile.path);
+      final inputImage = InputImage.fromFile(imageFile);
+
+      final faceDetector = FaceDetector(
+        options:
+        FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+      );
+
+      final List<Face> faces = await faceDetector.processImage(inputImage);
+      await faceDetector.close();
+
+      if (faces.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No face detected. Please try again.')),
+        );
+        return;
+      }
+
+      _capturedImage = imageFile;
+      if (!mounted) return;
+      if (await imageFile.exists()) {
+        _capturedImage = imageFile;
+
+        List<int> imageBytes = await imageFile.readAsBytes();
+        String base64Image = base64Encode(imageBytes);
+
+        print('BaseImage: $base64Image');
+
+        // if (!mounted) return;
+        editProfile(base64Image,imageFile);
+
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,),
+        );
+
+      }
+    } catch (e) {
+      print("Camera error: $e");
+      SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,);
+    }
+  }
+
 
   Widget _drawerItem({
     required IconData icon,
@@ -1544,7 +1756,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       left: 2,
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            if (_capturedImage != null) {
+                              Navigator.pop(context, _capturedImage);
+                            } else {
+                              Navigator.pop(context); // Just go back
+                            }
+                          }
+
                       ),
                     ),
                     Positioned(
@@ -1563,13 +1782,19 @@ class _ProfilePageState extends State<ProfilePage> {
                       right: 0,
                       child: Column(
                         children: [
-                          CircleAvatar(
-                            radius: 80,
-                            backgroundImage: widget.capturedImage != null
-                                ? FileImage(widget.capturedImage!)
-                                : const AssetImage('assets/no_profile.jpg')
-                                    as ImageProvider,
+                          GestureDetector(
+                            onTap: () {
+                              _openCamera();
+                            },
+                            child: CircleAvatar(
+                              radius: 80,
+                              backgroundImage: _capturedImage != null
+                                  ? FileImage(_capturedImage!)
+                                  : const AssetImage('assets/no_profile.jpg')
+                              as ImageProvider,
+                            ),
                           ),
+
                           const SizedBox(height: 12),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 30),
@@ -1664,6 +1889,7 @@ class EmployeeDetails {
   final String email;
   final String role;
 
+
   EmployeeDetails({
     required this.actualName,
     required this.userName,
@@ -1714,11 +1940,12 @@ Widget buildDetailRow(String label, String value) {
 class EmployeeDetailsPage extends StatefulWidget {
   final String token;
   final String empId;
+  final File? capturedImage;
 
   const EmployeeDetailsPage({
     super.key,
     required this.token,
-    required this.empId,
+    required this.empId, this.capturedImage,
   });
 
   @override
@@ -1810,9 +2037,12 @@ class _EmployeeDetailsPageState extends State<EmployeeDetailsPage> {
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       children: [
-                        const CircleAvatar(
-                          radius: 50,
-                          backgroundImage: AssetImage('assets/no_profile.jpg'),
+                        CircleAvatar(
+                          radius: 80,
+                          backgroundImage: widget.capturedImage != null
+                              ? FileImage(widget.capturedImage!)
+                              : const AssetImage('assets/no_profile.jpg')
+                          as ImageProvider,
                         ),
                         const SizedBox(height: 20),
                         buildDetailRow('Name', jsonBody['actualName']),
@@ -2424,6 +2654,7 @@ class _VisitorPageState extends State<VisitorPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        print(data);
         setState(() {
           visitorData = data;
           isLoading = false;
@@ -2509,14 +2740,26 @@ class _VisitorPageState extends State<VisitorPage> {
   }
 
   void onAddVisitor() async {
-    final result = await Navigator.push(
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AppointmentPage()),
-    );
+      MaterialPageRoute(builder: (context) => const AppointmentPage()),
+    ).then((result) {
+      if (result == 'refresh') {
+        // re-fetch user info or call setState()
+        fetchVisitorRequests();
+      }
+    });
 
-    if (result == true) {
-      fetchVisitorRequests(); // Refresh list after new entry
-    }
+
+
+    // final result = await Navigator.push(
+    //   context,
+    //   MaterialPageRoute(builder: (_) => const AppointmentPage()),
+    // );
+    //
+    // if (result == true) {
+    //   fetchVisitorRequests(); // Refresh list after new entry
+    // }
   }
 
   @override
@@ -2554,9 +2797,11 @@ class _AppointmentPageState extends State<AppointmentPage> {
 
   List<dynamic> visitorTypes = [];
   List<dynamic> visitorPurposes = [];
+  List<String> officerNumbers = [];
 
   int? selectedVisitorTypeId;
   int? selectedVisitorPurposeId;
+  String? selectedMobileNumber;
 
   final mobileController = TextEditingController();
   final nameController = TextEditingController();
@@ -2589,6 +2834,9 @@ class _AppointmentPageState extends State<AppointmentPage> {
       });
 
       if(visitorMobileResponse.statusCode == 200) {
+        setState(() {
+          officerNumbers = List<String>.from(jsonDecode(visitorMobileResponse.body));
+        });
         print('visitorMobileResponse: ${visitorMobileResponse.body}');
       } else {
         print('Error');
@@ -2648,17 +2896,26 @@ class _AppointmentPageState extends State<AppointmentPage> {
     final token = prefs.getString('apiToken') ?? '';
     final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Create');
 
+
+    DateTime from = DateTime.parse(fromDate!.toIso8601String());
+    DateTime to = DateTime.parse(toDate!.toIso8601String());
+
+    String formattedFrom = DateFormat("dd-MM-yyyy hh:mm a").format(from);
+    String formattedTo = DateFormat("dd-MM-yyyy hh:mm a").format(to);
+
     final body = {
       "visitorTypeId": selectedVisitorTypeId,
       "visitorPurposeId": selectedVisitorPurposeId,
       "name": nameController.text.trim(),
       "companyName": companyController.text.trim(),
-      "mobileNumber": mobileController.text.trim(),
+      "mobileNumber": selectedMobileNumber,
       "emailId": emailController.text.trim(),
       "city": cityController.text.trim(),
-      "from": fromDate!.toIso8601String(),
-      "to": toDate!.toIso8601String(),
+      "from": formattedFrom,
+      "to": formattedTo,
     };
+
+    print(body);
 
     try {
       final response = await http.post(
@@ -2671,7 +2928,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       );
 
       if (response.statusCode == 200) {
-        Navigator.pop(context); // return to list
+        Navigator.pop(context, 'refresh');
       } else {
         print('Failed: ${response.body}');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2783,12 +3040,20 @@ class _AppointmentPageState extends State<AppointmentPage> {
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
-                      controller: mobileController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(labelText: 'Mobile Number *'),
-                      validator: (value) =>
-                      value!.isEmpty ? 'Mobile number is required' : null,
+                    child: DropdownButtonFormField<String>(
+                      value: selectedMobileNumber,
+                      decoration: const InputDecoration(labelText: 'Select Mobile Number *',labelStyle: TextStyle(fontSize: 12),),
+                      items: officerNumbers
+                          .map((number) => DropdownMenuItem<String>(
+                        value: number,
+                        child: Text(number),
+                      ))
+                          .toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          selectedMobileNumber = val!;
+                        });
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -5175,7 +5440,7 @@ class _AlertPageState extends State<AlertPage> {
     return prefs.getBool(key) ?? false;
   }
 
-  Future<void> registerFirst(String base64Image, String punchStatus) async {
+  Future<void> registerFirst(String base64Image, String punchStatus, File profilePhoto) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
@@ -5218,10 +5483,16 @@ class _AlertPageState extends State<AlertPage> {
     if (response.statusCode == 200) {
       print('✅ Punch Registered: ${response.body}');
       await saveBool('isRegister', true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo Matched!'),
+          backgroundColor: Colors.green,
+        ),
+      );
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => HomePage(capturedImage: _capturedImage!),
+          builder: (context) => HomePage(capturedImage: profilePhoto,),
         ),
       );
     } else {
@@ -5231,26 +5502,33 @@ class _AlertPageState extends State<AlertPage> {
 
 
 
-  Future<void> registerPunch(String base64Image, String punchStatus) async {
-    if(isLoggedIn == false) {
-      print('isLoggedIn == true');
-      registerFirst(base64Image,punchStatus);
-    } else if (isLoggedIn == true) {
+  Future<void> registerPunch(
+      String base64Image,
+      String punchStatus,
+      File profilePhoto,
+      BuildContext context, // ✅ Pass context here
+      ) async {
+    if (isLoggedIn == false) {
       print('isLoggedIn == false');
-      verifyPhoto(base64Image);
+      registerFirst(base64Image, punchStatus, profilePhoto);
+    } else if (isLoggedIn == true) {
+      print('isLoggedIn == true');
+      await verifyPhoto(base64Image, punchStatus, profilePhoto, context); // ✅ Pass context and punchStatus
     }
-
-
   }
 
-
-  Future<void> verifyPhoto(String imagePath) async {
+  Future<void> verifyPhoto(
+      String imagePath,
+      String punchStatus,
+      File profilePhoto,
+      BuildContext context,
+      ) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
-    print('imagePath : $imagePath');
+    print('verify started....');
 
-    Map<String,String> body = {
+    Map<String, String> body = {
       "File": imagePath
     };
 
@@ -5264,18 +5542,22 @@ class _AlertPageState extends State<AlertPage> {
     );
 
     final data = jsonDecode(response.body);
-    bool isMatch = data['match'];
+    print('data: $data');
 
-    if (isMatch == true) {
-      registerFirst(imagePath,punchStatus!);
+    // ✅ Read the correct key and guard against null
+    bool isMatch = data['matchWithPunchImage'] == true;
+
+    if (isMatch) {
+      print("Verification Successful");
+      await registerFirst(imagePath, punchStatus, profilePhoto);
     } else {
+      print("Verification Failed: ${response.statusCode}");
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Photo Unmatched! Please Try Again'),
           backgroundColor: Colors.red,
         ),
       );
-      print("Verification Failed: ${response.statusCode}");
     }
   }
 
@@ -5326,6 +5608,9 @@ class _AlertPageState extends State<AlertPage> {
       }
     } catch (e) {
       print("❌ Exception: $e");
+      setState(() {
+        punchStatus = 'IN';
+      });
     }
   }
 
@@ -5436,7 +5721,7 @@ class _AlertPageState extends State<AlertPage> {
         print('BaseImage: $base64Image');
 
         // if (!mounted) return;
-        registerPunch(base64Image, punchStatus);
+        registerPunch(base64Image, punchStatus, _capturedImage!, context);
 
       } else {
         print("Captured image does not exist.");
@@ -9095,21 +9380,35 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
                 itemBuilder: (context, index) {
                   final log = rawPunchList[index];
                   final swipeTime = log['swipeDateTime']?.toString();
+
+                  String formattedSwipeTime = '';
+                  if (swipeTime != null && swipeTime.isNotEmpty) {
+                    try {
+                      final parsedDate = DateTime.parse(swipeTime);
+                      final formatter = DateFormat('dd/MM/yyyy  HH:mm'); // 24-hour format
+                      formattedSwipeTime = formatter.format(parsedDate);
+                    } catch (e) {
+                      formattedSwipeTime = 'Invalid date';
+                    }
+                  }
+
+
+
                   final DateTime? dateTime = swipeTime != null
                       ? DateTime.tryParse(swipeTime)?.toLocal()
                       : null;
 
                   final date = dateTime != null
-                      ? DateFormat('id').format(dateTime)
+                      ? DateFormat('dd').format(dateTime)
                       : '1';
                   final day = dateTime != null
                       ? DateFormat('EEE').format(dateTime)
                       : '1';
-                  final time = swipeTime;
+                  final time = formattedSwipeTime;
                   final status = log['punch'] ?? 'N/A';
                   final location = log['location'] ?? '';
                   final color =
-                      (status == 'In' 'Out') ? Colors.red : Colors.green;
+                      (status == 'In') ? Colors.green : Colors.red;
                   final empId = log['employeeId']?.toString() ?? '';
                   final empName = log['name']?.toString() ?? '';
 
