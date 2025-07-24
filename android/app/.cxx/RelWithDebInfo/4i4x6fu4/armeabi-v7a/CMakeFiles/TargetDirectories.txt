@@ -1,0 +1,2 @@
+C:/Users/Dell/AndroidStudioProjects/Hanon/android/app/.cxx/RelWithDebInfo/4i4x6fu4/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/Dell/AndroidStudioProjects/Hanon/android/app/.cxx/RelWithDebInfo/4i4x6fu4/armeabi-v7a/CMakeFiles/rebuild_cache.dir
