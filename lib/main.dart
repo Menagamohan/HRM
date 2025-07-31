@@ -17,6 +17,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 // import 'package:googleapis_auth/auth_browser.dart';
 // import 'package:googleapis_auth/auth_io.dart';
+import 'package:lottie/lottie.dart';
 import 'package:hanon/log_database.dart';
 import 'package:hanon/log_entry.dart';
 import 'package:hanon/push_notification_service.dart';
@@ -131,7 +132,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
 
-    Timer(const Duration(seconds: 3), () {
+    Timer(const Duration(seconds: 5), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -141,16 +142,21 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return  Scaffold(
       body: Center(
-        child: Text(
-          'Welcome',
-          style: TextStyle(
-            fontSize: 44,
-            fontWeight: FontWeight.bold,
-            color: Color(0xff1530ca),
-          ),
-        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Lottie.asset(
+              'assets/Loading animation blue.json',
+              width: 300,
+              height: 300,
+              fit: BoxFit.contain,
+            ),
+          ],
+        )
+
+
       ),
     );
   }
@@ -569,7 +575,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: Colors.grey[200],
+                  color: Colors.grey[100],
                 ),
                 child: Image.asset(imagePath),
               ),
@@ -600,7 +606,68 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ],
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 14)),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget buildBoxItemees(
+      BuildContext context,
+      String imagePath,
+      String label,
+      Widget page, {
+        int leaveEntries = 0, // Default value
+      }) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => page),
+        );
+      },
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                height: 65,
+                width: 65,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[100],
+                ),
+                child: Image.asset(imagePath),
+              ),
+              if (leaveEntries > 0)
+                Positioned(
+                  right: 2,
+                  top: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints:
+                    const BoxConstraints(minWidth: 20, minHeight: 20),
+                    child: Center(
+                      child: Text(
+                        '$leaveEntries',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -610,34 +677,86 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       BuildContext context, String imagePath, String label, Widget page,
       {required String leaveEntries}) {
     return GestureDetector(
-      onTap: () =>
-          Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => page),
+        );
+      },
       child: Column(
         children: [
           Stack(
-            alignment: Alignment.topRight,
             children: [
-              Image.asset(imagePath, width: 60, height: 60),
+              Container(
+                height: 70,
+                width: 65,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[100],
+                ),
+                child: Image.asset(imagePath),
+              ),
               if (leaveEntries != '0')
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    leaveEntries,
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                Positioned(
+                  right: 2,
+                  top: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints:
+                    const BoxConstraints(minWidth: 20, minHeight: 20),
+                    child: Center(
+                      child: Text(
+                        '$leaveEntries',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
+    // return GestureDetector(
+    //   onTap: () =>
+    //       Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+    //   child: Column(
+    //     children: [
+    //       Stack(
+    //         alignment: Alignment.topRight,
+    //         children: [
+    //           Image.asset(imagePath, width: 65, height: 60),
+    //           if (leaveEntries != '0')
+    //             Container(
+    //               padding:
+    //                   const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    //               decoration: BoxDecoration(
+    //                 color: Colors.red,
+    //                 borderRadius: BorderRadius.circular(12),
+    //               ),
+    //               child: Text(
+    //                 leaveEntries,
+    //                 style: const TextStyle(color: Colors.white, fontSize: 12),
+    //               ),
+    //             ),
+    //         ],
+    //       ),
+    //       const SizedBox(height: 4),
+    //       Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+    //     ],
+    //   ),
+    // );
   }
 
   Future<void> checkPending() async {
@@ -1028,11 +1147,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 30),
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(18),
                     margin: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(30),
                       boxShadow: const [
                         BoxShadow(
                           color: Colors.black26,
@@ -1067,16 +1186,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            buildBoxItem(
+                            buildBoxItemees(
                                 context,
                                 "assets/panic.png",
                                 "Manual Punch",
                                 AlertPage(
                                   name: userName!,
                                 )),
-                            buildBoxItem(context, "assets/biometric.png",
+                            buildBoxItemees(context, "assets/biometric.png",
                                 "Biometric", const BiometricPage()),
-                            buildBoxItem(context, "assets/logout.png", "Logout",
+                            buildBoxItemees(context, "assets/logout.png", "Logout",
                                 const LogoutPage()),
                           ],
                         ),
@@ -2623,6 +2742,7 @@ class _BirthdayPageState extends State<BirthdayPage> {
   }
 }
 
+
 class VisitorPage extends StatefulWidget {
   const VisitorPage({super.key});
 
@@ -2637,91 +2757,84 @@ class _VisitorPageState extends State<VisitorPage> {
   @override
   void initState() {
     super.initState();
-    fetchVisitorRequests();
+    fetchVisitorAppointments();
   }
 
-  Future<void> fetchVisitorRequests() async {
+  Future<String> getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('apiToken') ?? '';
+    return prefs.getString('apiToken') ?? '';
+  }
+
+  Future<void> fetchVisitorAppointments() async {
+    setState(() => isLoading = true);
+    final token = await getToken();
 
     final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetAppointment');
 
     try {
       final response = await http.get(
         url,
-        headers: {'Authorization': 'Bearer $token'},
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print(data);
+        data.sort((a, b) {
+          final aDate = DateTime.tryParse(a['checkInTime'] ?? '') ?? DateTime(0);
+          final bDate = DateTime.tryParse(b['checkInTime'] ?? '') ?? DateTime(0);
+          return bDate.compareTo(aDate); // newest first
+        });
         setState(() {
           visitorData = data;
           isLoading = false;
         });
       } else {
-        setState(() => isLoading = false);
-        print('Error: ${response.statusCode} ${response.body}');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load visitor data')),
-        );
+        showError("Failed to load appointments: ${response.statusCode}");
       }
     } catch (e) {
-      print('Exception: $e');
-      setState(() => isLoading = false);
+      showError("Exception: $e");
     }
+  }
+
+  void showError(String msg) {
+    setState(() => isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Widget buildVisitorCards() {
     if (visitorData.isEmpty) {
-      return const Center(child: Text("No visitor records found."));
+      return const Center(child: Text("No visitor appointments found."));
     }
 
     return ListView.builder(
       itemCount: visitorData.length,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(), // Allow embedding inside scroll views
       itemBuilder: (context, index) {
         final item = visitorData[index];
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Text("Sl. No: ${index + 1}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text("id               : ${item['id'] ?? ''}"),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text("Name        : ${item['name'] ?? ''}"),
-                  ],
-                ),
-                Text("Company  : ${item['companyName'] ?? ''}"),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text("Mobile       : ${item['mobileNumber'] ?? ''}"),
-                  ],
-                ),
-                Text("City            : ${item['city'] ?? ''}"),
-                const SizedBox(height: 4),
-                Text("Purpose    : ${item['purpose'] ?? ''}"),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text("From         : ${item['checkInTime'] != null ? _formatDate(item['checkInTime']) : ''}"),
-                  ],
-                ),
-                Text("To              : ${item['checkOutTime'] != null ? _formatDate(item['checkOutTime']) : ''}"),
-
-              ],
+        return GestureDetector(
+          // onTap: () => showVisitorDetailDialog(item),
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("id: ${item['id'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text("Name: ${item['name'] ?? ''}"),
+                  Text("Company: ${item['companyName'] ?? ''}"),
+                  Text("Mobile: ${item['mobileNumber'] ?? ''}"),
+                  Text("City: ${item['city'] ?? ''}"),
+                  Text("Purpose: ${item['purpose'] ?? ''}"),
+                  Text("From: ${_formatDate(item['checkInTime'])}"),
+                  Text("To: ${_formatDate(item['checkOutTime'], isCheckOut: true)}"),
+                ],
+              ),
             ),
           ),
         );
@@ -2729,8 +2842,17 @@ class _VisitorPageState extends State<VisitorPage> {
     );
   }
 
+  String _formatDate(String? dateStr, {bool isCheckOut = false}) {
+    if (dateStr == null || dateStr.isEmpty) {
+      // If it's a checkout time, return default 6 PM for today
+      if (isCheckOut) {
+        final now = DateTime.now();
+        final defaultTime = DateTime(now.year, now.month, now.day, 18, 0); // 6:00 PM
+        return DateFormat('dd-MM-yyyy hh:mm a').format(defaultTime);
+      }
+      return '';
+    }
 
-  String _formatDate(String dateStr) {
     try {
       final dateTime = DateTime.parse(dateStr);
       return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
@@ -2739,34 +2861,30 @@ class _VisitorPageState extends State<VisitorPage> {
     }
   }
 
+
   void onAddVisitor() async {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AppointmentPage()),
     ).then((result) {
       if (result == 'refresh') {
-        // re-fetch user info or call setState()
-        fetchVisitorRequests();
+        fetchVisitorAppointments();
       }
     });
+  }
 
-
-
-    // final result = await Navigator.push(
-    //   context,
-    //   MaterialPageRoute(builder: (_) => const AppointmentPage()),
-    // );
-    //
-    // if (result == true) {
-    //   fetchVisitorRequests(); // Refresh list after new entry
-    // }
+  void filterPending() {
+    // Add your filtering logic here
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Pending filter clicked")),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Visitor Requests'),
+        title: const Text('Visitor Appointments'),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
@@ -2779,11 +2897,286 @@ class _VisitorPageState extends State<VisitorPage> {
           ? const Center(child: CircularProgressIndicator())
           : Padding(
         padding: const EdgeInsets.all(16.0),
-        child: buildVisitorCards(),
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PendingVisitorListPage()),
+                  );
+                },
+                child: const Text("Pending"),
+              ),
+
+            ),
+            const SizedBox(height: 10),
+            Expanded(child: buildVisitorCards()),
+          ],
+        ),
       ),
     );
   }
 }
+
+
+class VisitorRequestModel {
+  final int id;
+  final String visitorType;
+  final String purpose;
+  final String permitNumber;
+  final String name;
+  final String company;
+  final String checkInTime;
+  final String checkOutTime;
+  final String photo;
+
+  VisitorRequestModel({
+    required this.id,
+    required this.visitorType,
+    required this.purpose,
+    required this.permitNumber,
+    required this.name,
+    required this.company,
+    required this.checkInTime,
+    required this.checkOutTime,
+    required this.photo,
+  });
+
+  factory VisitorRequestModel.fromJson(Map<String, dynamic> json) {
+    return VisitorRequestModel(
+      id: json['id'],
+      visitorType: json['visitor'] ?? '',
+      purpose: json['purpose'] ?? '',
+      permitNumber: json['passNumber'] ?? '',
+      name: json['name'] ?? '',
+      company: json['companyName'] ?? '',
+      checkInTime: json['checkInTime'] ?? '',
+      checkOutTime: json['checkOutTime'] ?? '',
+      photo: json['photo'] ?? '',
+    );
+  }
+}
+
+class PendingVisitorListPage extends StatefulWidget {
+  const PendingVisitorListPage({super.key});
+
+  @override
+  State<PendingVisitorListPage> createState() => _PendingVisitorListPageState();
+}
+
+class _PendingVisitorListPageState extends State<PendingVisitorListPage> {
+  List<VisitorRequestModel> pendingVisitors = [];
+  bool isLoading = false;
+  String selectedStatus = 'Pending';
+  TextEditingController remarksController = TextEditingController();
+  String? base64ImageString;
+  Uint8List? imageBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    //fetchPendingVisitors();
+    getGetVisitorRequest();
+  }
+
+  Future<String> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('apiToken') ?? '';
+  }
+
+  Future<void> getGetVisitorRequest() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('apiToken') ?? '';
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorRequest');
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      print('GET VisitorRequest → Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final List<dynamic> body = jsonDecode(response.body);
+        pendingVisitors = body.map((item) => VisitorRequestModel.fromJson(item)).toList();
+        setState(() {
+          base64ImageString = body[0]['photo'].toString();
+          if (base64ImageString!.contains(',')) {
+            base64ImageString = base64ImageString!.split(',').last;
+          }
+           imageBytes = base64Decode(base64ImageString!);
+          isLoading = false;
+        });
+      } else {
+        // Error response from server
+        print("Failed to fetch visitor requests: ${response.statusCode}");
+        isLoading = false;
+      }
+    } catch (e) {
+      print("Exception during GET request: $e");
+      isLoading = false;
+    }
+  }
+
+  Widget visitorDetailsCard(VisitorRequestModel visitor) {
+    return Column(
+      children: [
+        Container(
+            width: 200,
+            height: 200,
+            margin: const EdgeInsets.all(8),
+            child: Image.memory(imageBytes!)
+
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Visitor Photo
+
+            const SizedBox(width: 20),
+            // Visitor Details
+            Expanded(
+              child: Table(
+                columnWidths: const {
+                  0: IntrinsicColumnWidth(),
+                  1: FlexColumnWidth(),
+                },
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                children: [
+                  _buildRow("Id", visitor.id.toString()),
+                  _buildRow("Visitor", visitor.visitorType),
+                  _buildRow("Purpose", visitor.purpose),
+                  _buildRow("Pass Number", visitor.permitNumber),
+                  _buildRow("Name", visitor.name),
+                  _buildRow("Company", visitor.company),
+                  _buildRow("Check in Time", visitor.checkInTime),
+                  _buildRow("Check Out Time", visitor.checkOutTime),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // Action Radio Buttons
+        Row(
+          children: [
+            Radio(value: '1', groupValue: selectedStatus, onChanged: (val) {
+              setState(() => selectedStatus = val.toString());
+            }),
+            const Text("Approved *", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 20),
+            Radio(value: '2', groupValue: selectedStatus, onChanged: (val) {
+              setState(() => selectedStatus = val.toString());
+            }),
+            const Text("Rejected", style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        // Remarks input
+        TextField(
+          controller: remarksController,
+          decoration: const InputDecoration(
+            labelText: "Remarks",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Submit Buttons
+        Row(
+          children: [
+            ElevatedButton(onPressed: () => submitAction(visitor.id), child: const Text("Submit")),
+            const SizedBox(width: 10),
+            OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text("Back")),
+          ],
+        ),
+      ],
+    );
+  }
+
+  TableRow _buildRow(String label, String value) {
+    return TableRow(
+      children: [
+        Padding(padding: const EdgeInsets.all(4), child: Text(label)),
+        Padding(padding: const EdgeInsets.all(4), child: Text(value)),
+      ],
+    );
+  }
+
+
+  Future<void> submitAction(int visitorId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('apiToken') ?? '';
+
+    print(selectedStatus);
+
+    final payload = {
+      "id": visitorId,
+      "actionId": selectedStatus == '1' ? "A" : "R",
+      "remarks": remarksController.text,
+    };
+
+    print(payload);
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Pending');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    print("Submit Response: ${response.statusCode}");
+    print("Body: ${response.body}");
+
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Visitor action submitted.",style: TextStyle(color: Colors.white),),backgroundColor: Colors.green,),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error while submitting! Try Again",style: TextStyle(color: Colors.white),),backgroundColor: Colors.green,),
+      );
+    }
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Pending Visitors")),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : pendingVisitors.isEmpty
+          ? const Center(child: Text("No visitor requests found."))
+          : ListView.builder(
+        itemCount: pendingVisitors.length,
+        itemBuilder: (context, index) {
+          return Card(
+            margin: const EdgeInsets.all(8),
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: visitorDetailsCard(pendingVisitors[index]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+}
+
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -2803,11 +3196,12 @@ class _AppointmentPageState extends State<AppointmentPage> {
   int? selectedVisitorPurposeId;
   String? selectedMobileNumber;
 
-  final mobileController = TextEditingController();
-  final nameController = TextEditingController();
-  final companyController = TextEditingController();
-  final emailController = TextEditingController();
-  final cityController = TextEditingController();
+  final TextEditingController mobileController = TextEditingController();
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController companyController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController cityController = TextEditingController();
+
 
   DateTime? fromDate;
   DateTime? toDate;
@@ -2842,6 +3236,52 @@ class _AppointmentPageState extends State<AppointmentPage> {
         print('Error');
       }
 
+  }
+
+  Future<void> fetchVisitorDetails(String mobileNumber) async {
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorDetail?MobileNumber=$mobileNumber');
+
+    final token = await getToken();
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          nameController.text = data['name'] ?? '';
+          companyController.text = data['companyName'] ?? '';
+          emailController.text = data['emailId'] ?? '';
+          cityController.text = data['city'] ?? '';
+        });
+      } else {
+        clearFormFields();
+        print('API Error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Exception: $e');
+    }
+  }
+
+
+  void clearFormFields() {
+    setState(() {
+      nameController.clear();
+      companyController.clear();
+      emailController.clear();
+      cityController.clear();
+    });
+  }
+
+  Future<String> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('apiToken') ?? '';
   }
 
 
@@ -2908,7 +3348,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       "visitorPurposeId": selectedVisitorPurposeId,
       "name": nameController.text.trim(),
       "companyName": companyController.text.trim(),
-      "mobileNumber": selectedMobileNumber,
+      "mobileNumber": mobileController.text,
       "emailId": emailController.text.trim(),
       "city": cityController.text.trim(),
       "from": formattedFrom,
@@ -2985,7 +3425,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Appointment New')),
+      appBar: AppBar(title: const Text('New Appointment')),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -3037,66 +3477,56 @@ class _AppointmentPageState extends State<AppointmentPage> {
               const SizedBox(height: 12),
 
               // Name & Mobile
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: selectedMobileNumber,
-                      decoration: const InputDecoration(labelText: 'Select Mobile Number *',labelStyle: TextStyle(fontSize: 12),),
-                      items: officerNumbers
-                          .map((number) => DropdownMenuItem<String>(
-                        value: number,
-                        child: Text(number),
-                      ))
-                          .toList(),
-                      onChanged: (val) {
-                        setState(() {
-                          selectedMobileNumber = val!;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Name *'),
-                      validator: (value) =>
-                      value!.isEmpty ? 'Name is required' : null,
-                    ),
-                  ),
+              TextFormField(
+                controller: mobileController,
+                keyboardType: TextInputType.number,
+                maxLength: 10,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
                 ],
+                decoration: const InputDecoration(
+                  labelText: 'Mobile Number *',
+                  counterText: '', // hides character counter
+                  labelStyle: TextStyle(fontSize: 12),
+                ),
+                onChanged: (value) {
+                  if (value.length == 10) {
+                    fetchVisitorDetails(value);
+                  } else {
+                    clearFormFields();
+                  }
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Mobile number is required';
+                  } else if (value.length != 10) {
+                    return 'Enter a valid 10-digit number';
+                  }
+                  return null;
+                },
               ),
-              const SizedBox(height: 12),
 
-              // Company & Email
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: companyController,
-                      decoration:
-                      const InputDecoration(labelText: 'Company Name *'),
-                      validator: (value) =>
-                      value!.isEmpty ? 'Company name is required' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: emailController,
-                      decoration: const InputDecoration(labelText: 'Email Id'),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name *'),
+                validator: (value) => value!.isEmpty ? 'Name is required' : null,
               ),
-              const SizedBox(height: 12),
-
-              // City
+              TextFormField(
+                controller: companyController,
+                decoration: const InputDecoration(labelText: 'Company Name *'),
+                validator: (value) => value!.isEmpty ? 'Company name is required' : null,
+              ),
+              TextFormField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: 'Email Id'),
+              ),
               TextFormField(
                 controller: cityController,
                 decoration: const InputDecoration(labelText: 'City'),
               ),
+
               const SizedBox(height: 16),
 
               // From & To
@@ -3138,7 +3568,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
                 children: [
                   ElevatedButton(
                     onPressed: isSubmitting ? null : submitForm,
-                    child: const Text('Save'),
+                    child: const Text('Create'),
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton(
