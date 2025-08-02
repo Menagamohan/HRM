@@ -2799,6 +2799,8 @@ class _VisitorPageState extends State<VisitorPage> {
     }
   }
 
+  Future<void> editVisitor() async {}
+
   void showError(String msg) {
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -2821,20 +2823,34 @@ class _VisitorPageState extends State<VisitorPage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             child: Padding(
               padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("id: ${item['id'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  Text("Name: ${item['name'] ?? ''}"),
-                  Text("Company: ${item['companyName'] ?? ''}"),
-                  Text("Mobile: ${item['mobileNumber'] ?? ''}"),
-                  Text("City: ${item['city'] ?? ''}"),
-                  Text("Purpose: ${item['purpose'] ?? ''}"),
-                  Text("From: ${_formatDate(item['checkInTime'])}"),
-                  Text("To: ${_formatDate(item['checkOutTime'], isCheckOut: true)}"),
-                ],
-              ),
+              child: GestureDetector(
+                onTap: () {
+                  print(item);
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      // children: [
+                      //   Spacer(),
+                      //   Icon(Icons.edit,size: 18,)
+                      // ],
+                    ),
+                    Text("id: ${item['id'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text("Name        : ${item['name'] ?? ''}"),
+                    Text("Company  : ${item['companyName'] ?? ''}"),
+                    Text("Mobile       : ${item['mobileNumber'] ?? ''}"),
+                    Text("City            : ${item['city'] ?? ''}"),
+                    Text("Purpose    : ${item['purpose'] ?? ''}"),
+                    Text("From         : ${_formatDate(item['checkInTime'])}"),
+                    Text("To              : ${_formatDate(item['checkOutTime'])}"),
+
+                  ],
+                ),
+              )
+
+
             ),
           ),
         );
@@ -2842,17 +2858,8 @@ class _VisitorPageState extends State<VisitorPage> {
     );
   }
 
-  String _formatDate(String? dateStr, {bool isCheckOut = false}) {
-    if (dateStr == null || dateStr.isEmpty) {
-      // If it's a checkout time, return default 6 PM for today
-      if (isCheckOut) {
-        final now = DateTime.now();
-        final defaultTime = DateTime(now.year, now.month, now.day, 18, 0); // 6:00 PM
-        return DateFormat('dd-MM-yyyy hh:mm a').format(defaultTime);
-      }
-      return '';
-    }
-
+  String _formatDate(String? dateStr) {
+    if (dateStr == null) return '';
     try {
       final dateTime = DateTime.parse(dateStr);
       return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
@@ -2860,7 +2867,6 @@ class _VisitorPageState extends State<VisitorPage> {
       return '';
     }
   }
-
 
   void onAddVisitor() async {
     Navigator.push(
@@ -2906,7 +2912,11 @@ class _VisitorPageState extends State<VisitorPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const PendingVisitorListPage()),
-                  );
+                  ).then((result) {
+                    if (result == 'refresh') {
+                      fetchVisitorAppointments();
+                    }
+                  });
                 },
                 child: const Text("Pending"),
               ),
@@ -3140,6 +3150,7 @@ class _PendingVisitorListPageState extends State<PendingVisitorListPage> {
     print("Body: ${response.body}");
 
     if (response.statusCode == 200) {
+      Navigator.pop(context, 'refresh');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Visitor action submitted.",style: TextStyle(color: Colors.white),),backgroundColor: Colors.green,),
       );
@@ -3408,9 +3419,18 @@ class _AppointmentPageState extends State<AppointmentPage> {
           pickedTime.hour,
           pickedTime.minute,
         );
+
         setState(() {
           if (isFrom) {
             fromDate = fullDateTime;
+
+            // Set default toDate to same day at 6:00 PM
+            toDate = DateTime(
+              fullDateTime.year,
+              fullDateTime.month,
+              fullDateTime.day,
+              18, 0,
+            );
           } else {
             toDate = fullDateTime;
           }
@@ -3418,6 +3438,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       }
     }
   }
+
 
   String _formatDateTime(DateTime? dt) =>
       dt != null ? DateFormat('dd-MM-yyyy hh:mm a').format(dt) : '';
@@ -9107,7 +9128,7 @@ class _BiometricPageState extends State<BiometricPage> {
         setState(() {
           _authStatus = 'Authentication successful';
         });
-
+print('Authentication successful');
         await prefs.setBool('isBiometricEnabled', true);
 
         bool birthday = prefs.getBool('birthday') ?? false;
@@ -9162,7 +9183,7 @@ class _BiometricPageState extends State<BiometricPage> {
     if (response.statusCode == 200 && response.body.isNotEmpty) {
       print("Body : ${response.body}");
       final responseBody = json.decode(response.body);
-      await prefs.setString('apiToken', responseBody['accessToken']);
+      await prefs.setString('apiToken', responseBody['refreshToken']);
       String refreshId = await prefs.getString('apiToken')!;
       print('RefreshId : $refreshId');
     } else {
