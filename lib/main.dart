@@ -17,6 +17,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 // import 'package:googleapis_auth/auth_browser.dart';
 // import 'package:googleapis_auth/auth_io.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
 import 'package:lottie/lottie.dart';
 import 'package:hanon/log_database.dart';
 import 'package:hanon/log_entry.dart';
@@ -180,7 +182,25 @@ class _LoginPageState extends State<LoginPage> {
     super.initState();
     _checkIfLoggedIn();
     _biometricCheck();
+    getDeviceId().then((id) {
+      print('Device ID: $id');
+    });
   }
+
+  Future<String?> getDeviceId() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+
+    if (Platform.isAndroid) {
+      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.id; // Use `androidId` for ANDROID_ID
+    } else if (Platform.isIOS) {
+      IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+      return iosInfo.identifierForVendor; // Unique ID on iOS
+    }
+
+    return null;
+  }
+
 
   void _checkIfLoggedIn() async {
     String? token = await FirebaseMessaging.instance.getToken();
@@ -2979,7 +2999,7 @@ class PendingVisitorListPage extends StatefulWidget {
 
 class _PendingVisitorListPageState extends State<PendingVisitorListPage> {
   List<VisitorRequestModel> pendingVisitors = [];
-  bool isLoading = false;
+  bool isLoading = true;
   String selectedStatus = 'Pending';
   TextEditingController remarksController = TextEditingController();
   String? base64ImageString;
