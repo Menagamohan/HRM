@@ -72,7 +72,7 @@ void main() async {
   // Ask permission (iOS)
   await FirebaseMessaging.instance.requestPermission();
   _firebaseListener();
-
+  firebaseTokenRefresh();
   runApp(MaterialApp(
     debugShowCheckedModeBanner: false,
     navigatorKey: navigatorKey,
@@ -102,6 +102,55 @@ void _firebaseListener() {
     );
   });
 }
+
+void firebaseTokenRefresh() {
+  ///automatically update the FCMtoken to the server
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    print(' FCM Token refreshed: $newToken');
+    // TODO: Send newToken to your backend
+    sendTokenToServer(newToken);
+    });
+}
+
+void sendTokenToServer(String newToken) async {
+  final prefs = await SharedPreferences.getInstance();
+  String? userName = prefs.getString('user');
+  String? passwordId = prefs.getString('passwordId');
+
+  print(' user: $userName');
+  print(' passwordId: $passwordId');
+
+  final response = await http.post(
+    Uri.parse('http://hrmwebapi.lemeniz.com/api/Auth/Login'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'username': userName,
+      'password': passwordId,
+      'FcmToken': newToken,
+    }),
+  );
+
+  if (response.statusCode == 200) {
+    final responseBody = json.decode(response.body);
+    log('✅ Token sent successfully: $responseBody');
+    await prefs.setString('apiToken', newToken);
+    await prefs.setString('user', userName!);
+    await prefs.setString('passwordId', prefs.getString('passwordId')!);
+    String? passwordId = await prefs.getString('passwordId');
+    print('Conform : $passwordId');
+    await prefs.setString(
+        'user_name', responseBody['actualName'] ?? '');
+    await prefs.setString(
+        'designation', responseBody['designation'] ?? '');
+    await prefs.setString('userName', responseBody['userName'] ?? '');
+    await prefs.setString('userId', responseBody['userId'] ?? '');
+    await prefs.setString('dob', responseBody['dob'] ?? '');
+    await prefs.setBool('approver', responseBody['isApprover'] ?? '');
+  } else {
+    log('❌ Token send failed: ${response.statusCode}');
+  }
+}
+
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -144,22 +193,19 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return  Scaffold(
+    return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Lottie.asset(
-              'assets/Loading animation blue.json',
-              width: 300,
-              height: 300,
-              fit: BoxFit.contain,
-            ),
-          ],
-        )
-
-
-      ),
+          child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Lottie.asset(
+            'assets/Loading animation blue.json',
+            width: 300,
+            height: 300,
+            fit: BoxFit.contain,
+          ),
+        ],
+      )),
     );
   }
 }
@@ -181,11 +227,57 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _checkIfLoggedIn();
+
     _biometricCheck();
     getDeviceId().then((id) {
       print('Device ID: $id');
     });
   }
+
+  void sendFcmToServer() async {
+    String? fcmToken = await FirebaseMessaging.instance.getToken();
+    if (fcmToken != null) {
+      await updateFcmToken(fcmToken);
+    } else {
+      print("Failed to get FCM token");
+    }
+  }
+
+  Future<void> updateFcmToken(String fcmToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('apiToken');
+
+    print(token);
+
+    if (token == null || token.isEmpty) {
+      print('❌ No auth token found. Need login before updating FCM token.');
+      return;
+    }
+
+    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Auth/UpdateFcmToken');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // VERY important
+        },
+        body: jsonEncode({'fcmToken': fcmToken}),
+      );
+
+      if (response.statusCode == 200) {
+        print('✅ FCM token updated successfully');
+        print('${response.statusCode} - ${response.body}');
+      } else {
+        print('❌ Failed to update FCM token');
+        print('${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('⚠️ Error updating FCM token: $e');
+    }
+  }
+
 
   Future<String?> getDeviceId() async {
     final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
@@ -201,6 +293,12 @@ class _LoginPageState extends State<LoginPage> {
     return null;
   }
 
+  void deleteFCM() async {
+    await FirebaseMessaging.instance.deleteToken();
+    String? newToken = await FirebaseMessaging.instance.getToken();
+    print(' New token: $newToken');
+    sendTokenToServer(newToken!);
+  }
 
   void _checkIfLoggedIn() async {
     String? token = await FirebaseMessaging.instance.getToken();
@@ -309,7 +407,11 @@ class _LoginPageState extends State<LoginPage> {
                             backgroundColor: const Color(0xff09355a),
                             padding: const EdgeInsets.symmetric(vertical: 15),
                           ),
-                          onPressed: _login,
+                          onPressed: () {
+                            _login();
+                            //deleteFCM();
+                          },
+
                           child: const Text(
                             'Login',
                             style: TextStyle(fontSize: 25, color: Colors.white),
@@ -351,6 +453,7 @@ class _LoginPageState extends State<LoginPage> {
           log('====> ${responseBody}');
           final String token = responseBody['accessToken'] ?? '';
           if (token.isNotEmpty) {
+            sendFcmToServer();
             await prefs.setString('apiToken', token);
             await prefs.setString('user', _usernameController.text);
             print("Password : ${_passwordController.text}");
@@ -395,6 +498,7 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     } else if (isBiometricEnabled == true) {
+      sendFcmToServer();
       Future.microtask(() {
         Navigator.pushReplacement(
           context,
@@ -523,7 +627,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken');
 
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
 
     try {
       final response = await http.get(
@@ -537,12 +642,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-
-
         String base64Image = data['data'];
         _capturedImage = await base64ToFile(base64Image, 'captured_photo.jpg');
         setState(() {});
-
       } else {
         print('Failed to load photo. Status: ${response.statusCode}');
       }
@@ -551,15 +653,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> loadProfileImage() async {
-   if (widget.capturedImage != null) {
-     setState(() {
-       _capturedImage = widget.capturedImage;
-     });
 
-   } else if (widget.capturedImage == null) {
-     print('Photo is null');
-   }
+  Future<void> loadProfileImage() async {
+    if (widget.capturedImage != null) {
+      setState(() {
+        _capturedImage = widget.capturedImage;
+      });
+    } else if (widget.capturedImage == null) {
+      print('Photo is null');
+    }
   }
 
   void checkApprover() async {
@@ -633,12 +735,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget buildBoxItemees(
-      BuildContext context,
-      String imagePath,
-      String label,
-      Widget page, {
-        int leaveEntries = 0, // Default value
-      }) {
+    BuildContext context,
+    String imagePath,
+    String label,
+    Widget page, {
+    int leaveEntries = 0, // Default value
+  }) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -671,7 +773,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       shape: BoxShape.circle,
                     ),
                     constraints:
-                    const BoxConstraints(minWidth: 20, minHeight: 20),
+                        const BoxConstraints(minWidth: 20, minHeight: 20),
                     child: Center(
                       child: Text(
                         '$leaveEntries',
@@ -728,7 +830,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       shape: BoxShape.circle,
                     ),
                     constraints:
-                    const BoxConstraints(minWidth: 20, minHeight: 20),
+                        const BoxConstraints(minWidth: 20, minHeight: 20),
                     child: Center(
                       child: Text(
                         '$leaveEntries',
@@ -1215,8 +1317,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 )),
                             buildBoxItemees(context, "assets/biometric.png",
                                 "Biometric", const BiometricPage()),
-                            buildBoxItemees(context, "assets/logout.png", "Logout",
-                                const LogoutPage()),
+                            buildBoxItemees(context, "assets/logout.png",
+                                "Logout", const LogoutPage()),
                           ],
                         ),
                         if (roleType == true) ...[
@@ -1420,8 +1522,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       context,
                       MaterialPageRoute(
                           builder: (context) => ProfilePage(
-                            genderPhoto: genderPhoto!,
-                          )),
+                                genderPhoto: genderPhoto ?? '',
+                              )),
                     );
 
                     if (result != null) {
@@ -1624,7 +1726,8 @@ class _ProfilePageState extends State<ProfilePage> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken');
 
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Attendance/GetProfilePhoto');
 
     try {
       final response = await http.get(
@@ -1638,12 +1741,9 @@ class _ProfilePageState extends State<ProfilePage> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-
-
         String base64Image = data['data'];
         _capturedImage = await base64ToFile(base64Image, 'captured_photo.jpg');
         setState(() {});
-
       } else {
         print('Failed to load photo. Status: ${response.statusCode}');
       }
@@ -1670,7 +1770,8 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> editProfile(String base64Image, File imageFile) async {
-    const String apiUrl = 'http://hrmwebapi.lemeniz.com/api/Attendance/ProfilePhoto';
+    const String apiUrl =
+        'http://hrmwebapi.lemeniz.com/api/Attendance/ProfilePhoto';
 
     try {
       // Get token from SharedPreferences
@@ -1701,10 +1802,16 @@ class _ProfilePageState extends State<ProfilePage> {
         setState(() {
           _capturedImage = imageFile;
         });
-        SnackBar(content: Text('Profile updated successfully'),backgroundColor: Colors.green,);
+        SnackBar(
+          content: Text('Profile updated successfully'),
+          backgroundColor: Colors.green,
+        );
         print('Profile updated successfully');
       } else {
-    SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,);
+        SnackBar(
+          content: Text('Captured image does not exist.'),
+          backgroundColor: Colors.red,
+        );
         print('Failed to update profile: ${response.statusCode}');
         print('Response body: ${response.body}');
       }
@@ -1728,7 +1835,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final faceDetector = FaceDetector(
         options:
-        FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+            FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
       );
 
       final List<Face> faces = await faceDetector.processImage(inputImage);
@@ -1752,20 +1859,23 @@ class _ProfilePageState extends State<ProfilePage> {
         print('BaseImage: $base64Image');
 
         // if (!mounted) return;
-        editProfile(base64Image,imageFile);
-
+        editProfile(base64Image, imageFile);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,),
+          SnackBar(
+            content: Text('Captured image does not exist.'),
+            backgroundColor: Colors.red,
+          ),
         );
-
       }
     } catch (e) {
       print("Camera error: $e");
-      SnackBar(content: Text('Captured image does not exist.'),backgroundColor: Colors.red,);
+      SnackBar(
+        content: Text('Captured image does not exist.'),
+        backgroundColor: Colors.red,
+      );
     }
   }
-
 
   Widget _drawerItem({
     required IconData icon,
@@ -1894,16 +2004,15 @@ class _ProfilePageState extends State<ProfilePage> {
                       top: 50,
                       left: 2,
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          icon:
+                              const Icon(Icons.arrow_back, color: Colors.white),
                           onPressed: () {
                             if (_capturedImage != null) {
                               Navigator.pop(context, _capturedImage);
                             } else {
                               Navigator.pop(context); // Just go back
                             }
-                          }
-
-                      ),
+                          }),
                     ),
                     Positioned(
                       top: 50,
@@ -1930,10 +2039,9 @@ class _ProfilePageState extends State<ProfilePage> {
                               backgroundImage: _capturedImage != null
                                   ? FileImage(_capturedImage!)
                                   : const AssetImage('assets/no_profile.jpg')
-                              as ImageProvider,
+                                      as ImageProvider,
                             ),
                           ),
-
                           const SizedBox(height: 12),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 30),
@@ -2028,7 +2136,6 @@ class EmployeeDetails {
   final String email;
   final String role;
 
-
   EmployeeDetails({
     required this.actualName,
     required this.userName,
@@ -2084,7 +2191,8 @@ class EmployeeDetailsPage extends StatefulWidget {
   const EmployeeDetailsPage({
     super.key,
     required this.token,
-    required this.empId, this.capturedImage,
+    required this.empId,
+    this.capturedImage,
   });
 
   @override
@@ -2181,7 +2289,7 @@ class _EmployeeDetailsPageState extends State<EmployeeDetailsPage> {
                           backgroundImage: widget.capturedImage != null
                               ? FileImage(widget.capturedImage!)
                               : const AssetImage('assets/no_profile.jpg')
-                          as ImageProvider,
+                                  as ImageProvider,
                         ),
                         const SizedBox(height: 20),
                         buildDetailRow('Name', jsonBody['actualName']),
@@ -2597,7 +2705,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const VisitorPage()),
+                  MaterialPageRoute(builder: (context) => const VisitorAppointmentsPage()),
                 );
               },
             ),
@@ -2762,22 +2870,224 @@ class _BirthdayPageState extends State<BirthdayPage> {
   }
 }
 
+// class VisitorPage extends StatefulWidget {
+//   const VisitorPage({super.key});
+//
+//   @override
+//   State<VisitorPage> createState() => _VisitorPageState();
+// }
+//
+// class _VisitorPageState extends State<VisitorPage> {
+//   List<dynamic> visitorData = [];
+//   bool isLoading = true;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     fetchVisitorAppointments();
+//   }
+//
+//   Future<String> getToken() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     return prefs.getString('apiToken') ?? '';
+//   }
+//
+//   Future<void> fetchVisitorAppointments() async {
+//     setState(() => isLoading = true);
+//     final token = await getToken();
+//
+//     final url = Uri.parse(
+//         'http://hrmwebapi.lemeniz.com/api/Appointment/GetAppointment');
+//
+//     try {
+//       final response = await http.get(
+//         url,
+//         headers: {
+//           'Authorization': 'Bearer $token',
+//           'Content-Type': 'application/json',
+//         },
+//       );
+//
+//       if (response.statusCode == 200) {
+//         final data = jsonDecode(response.body);
+//         data.sort((a, b) {
+//           final aDate =
+//               DateTime.tryParse(a['checkInTime'] ?? '') ?? DateTime(0);
+//           final bDate =
+//               DateTime.tryParse(b['checkInTime'] ?? '') ?? DateTime(0);
+//           return bDate.compareTo(aDate); // newest first
+//         });
+//         setState(() {
+//           visitorData = data;
+//           isLoading = false;
+//         });
+//       } else {
+//         showError("Failed to load appointments: ${response.statusCode}");
+//       }
+//     } catch (e) {
+//       showError("Exception: $e");
+//     }
+//   }
+//
+//   Future<void> editVisitor() async {}
+//
+//   void showError(String msg) {
+//     setState(() => isLoading = false);
+//     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+//   }
+//
+//   Widget buildVisitorCards() {
+//     if (visitorData.isEmpty) {
+//       return const Center(child: Text("No visitor appointments found."));
+//     }
+//
+//     return ListView.builder(
+//       itemCount: visitorData.length,
+//       itemBuilder: (context, index) {
+//         final item = visitorData[index];
+//         return GestureDetector(
+//           // onTap: () => showVisitorDetailDialog(item),
+//           child: Card(
+//             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+//             elevation: 4,
+//             shape:
+//                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+//             child: Padding(
+//                 padding: const EdgeInsets.all(14),
+//                 child: GestureDetector(
+//                   onTap: () {
+//                     print(item);
+//                   },
+//                   child: Column(
+//                     crossAxisAlignment: CrossAxisAlignment.start,
+//                     children: [
+//                       Row(
+//                           // children: [
+//                           //   Spacer(),
+//                           //   Icon(Icons.edit,size: 18,)
+//                           // ],
+//                           ),
+//                       Text("id: ${item['id'] ?? ''}",
+//                           style: const TextStyle(fontWeight: FontWeight.bold)),
+//                       const SizedBox(height: 6),
+//                       Text("Name        : ${item['name'] ?? ''}"),
+//                       Text("Company  : ${item['companyName'] ?? ''}"),
+//                       Text("Mobile       : ${item['mobileNumber'] ?? ''}"),
+//                       Text("City            : ${item['city'] ?? ''}"),
+//                       Text("Purpose    : ${item['purpose'] ?? ''}"),
+//                       Text(
+//                           "From         : ${_formatDate(item['checkInTime'])}"),
+//                       Text(
+//                           "To              : ${_formatDate(item['checkOutTime'])}"),
+//                     ],
+//                   ),
+//                 )),
+//           ),
+//         );
+//       },
+//     );
+//   }
+//
+//   String _formatDate(String? dateStr) {
+//     if (dateStr == null) return '';
+//     try {
+//       final dateTime = DateTime.parse(dateStr);
+//       return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
+//     } catch (e) {
+//       return '';
+//     }
+//   }
+//
+//   void onAddVisitor() async {
+//     Navigator.push(
+//       context,
+//       MaterialPageRoute(builder: (context) => const AppointmentPage()),
+//     ).then((result) {
+//       if (result == 'refresh') {
+//         fetchVisitorAppointments();
+//       }
+//     });
+//   }
+//
+//   void filterPending() {
+//     // Add your filtering logic here
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       const SnackBar(content: Text("Pending filter clicked")),
+//     );
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: const Text('Visitor Appointments'),
+//         actions: [
+//           IconButton(
+//             icon: const Icon(Icons.add),
+//             tooltip: 'Add Visitor',
+//             onPressed: onAddVisitor,
+//           ),
+//         ],
+//       ),
+//       body: isLoading
+//           ? const Center(child: CircularProgressIndicator())
+//           : Padding(
+//               padding: const EdgeInsets.all(16.0),
+//               child: Column(
+//                 children: [
+//                   Align(
+//                     alignment: Alignment.centerLeft,
+//                     child: ElevatedButton(
+//                       onPressed: () {
+//                         Navigator.push(
+//                           context,
+//                           MaterialPageRoute(
+//                               builder: (context) =>
+//                                   const PendingVisitorListPage()),
+//                         ).then((result) {
+//                           if (result == 'refresh') {
+//                             fetchVisitorAppointments();
+//                           }
+//                         });
+//                       },
+//                       child: const Text("Pending"),
+//                     ),
+//                   ),
+//                   const SizedBox(height: 10),
+//                   Expanded(child: buildVisitorCards()),
+//                 ],
+//               ),
+//             ),
+//     );
+//   }
+// }
 
-class VisitorPage extends StatefulWidget {
-  const VisitorPage({super.key});
+class VisitorAppointmentsPage extends StatefulWidget {
+  const VisitorAppointmentsPage({super.key});
 
   @override
-  State<VisitorPage> createState() => _VisitorPageState();
+  State<VisitorAppointmentsPage> createState() =>
+      _VisitorAppointmentsPageState();
 }
 
-class _VisitorPageState extends State<VisitorPage> {
-  List<dynamic> visitorData = [];
-  bool isLoading = true;
+class _VisitorAppointmentsPageState extends State<VisitorAppointmentsPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  bool isLoadingPending = true;
+  bool isLoadingVisitors = true;
+
+  List<VisitorRequestModel> pendingVisitors = [];
+  List<VisitorRequestModel> allVisitors = [];
+
+  bool isFront = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     fetchVisitorAppointments();
+    fetchAllVisitors();
   }
 
   Future<String> getToken() async {
@@ -2786,91 +3096,88 @@ class _VisitorPageState extends State<VisitorPage> {
   }
 
   Future<void> fetchVisitorAppointments() async {
-    setState(() => isLoading = true);
     final token = await getToken();
-
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetAppointment');
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorRequest');
 
     try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final response = await http.get(url, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      });
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        data.sort((a, b) {
-          final aDate = DateTime.tryParse(a['checkInTime'] ?? '') ?? DateTime(0);
-          final bDate = DateTime.tryParse(b['checkInTime'] ?? '') ?? DateTime(0);
-          return bDate.compareTo(aDate); // newest first
-        });
+        final List<dynamic> body = jsonDecode(response.body);
         setState(() {
-          visitorData = data;
-          isLoading = false;
+          pendingVisitors =
+              body.map((item) => VisitorRequestModel.fromJson(item)).toList();
+          isLoadingPending = false;
         });
       } else {
-        showError("Failed to load appointments: ${response.statusCode}");
+        setState(() => isLoadingPending = false);
       }
     } catch (e) {
-      showError("Exception: $e");
+      setState(() => isLoadingPending = true);
     }
   }
 
-  Future<void> editVisitor() async {}
+  Future<void> fetchAllVisitors() async {
+    final token = await getToken();
+    final url =
+    Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetAppointment');
 
-  void showError(String msg) {
-    setState(() => isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    try {
+      final response = await http.get(url, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      });
+
+      if (response.statusCode == 200) {
+        final List<dynamic> body = jsonDecode(response.body);
+        setState(() {
+          allVisitors =
+              body.map((item) => VisitorRequestModel.fromJson(item)).toList();
+          isLoadingVisitors = false;
+        });
+      } else {
+        setState(() => isLoadingVisitors = false);
+      }
+    } catch (e) {
+      setState(() => isLoadingVisitors = false);
+    }
   }
 
-  Widget buildVisitorCards() {
-    if (visitorData.isEmpty) {
-      return const Center(child: Text("No visitor appointments found."));
+  Widget buildPendingTab() {
+    if (isLoadingPending) {
+      return const Center(child: CircularProgressIndicator());
     }
-
+    if (pendingVisitors.isEmpty) {
+      return const Center(child: Text("No pending visitors."));
+    }
     return ListView.builder(
-      itemCount: visitorData.length,
+      itemCount: pendingVisitors.length,
       itemBuilder: (context, index) {
-        final item = visitorData[index];
-        return GestureDetector(
-          // onTap: () => showVisitorDetailDialog(item),
-          child: Card(
-            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: GestureDetector(
-                onTap: () {
-                  print(item);
-                },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      // children: [
-                      //   Spacer(),
-                      //   Icon(Icons.edit,size: 18,)
-                      // ],
+        final visitor = pendingVisitors[index];
+        return Card(
+          margin: const EdgeInsets.all(8),
+          child: ListTile(
+            title: Text(visitor.name),
+            subtitle: Text("ID: ${visitor.id}"),
+            trailing: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => VisitorDetailsPage(
+                      visitor: visitor,
+                      onActionSubmit: (status, remarks) {
+                        submitAction(visitor.id, status, remarks);
+                      },
                     ),
-                    Text("id: ${item['id'] ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text("Name        : ${item['name'] ?? ''}"),
-                    Text("Company  : ${item['companyName'] ?? ''}"),
-                    Text("Mobile       : ${item['mobileNumber'] ?? ''}"),
-                    Text("City            : ${item['city'] ?? ''}"),
-                    Text("Purpose    : ${item['purpose'] ?? ''}"),
-                    Text("From         : ${_formatDate(item['checkInTime'])}"),
-                    Text("To              : ${_formatDate(item['checkOutTime'])}"),
-
-                  ],
-                ),
-              )
-
-
+                  ),
+                );
+              },
+              child: const Text("Details"),
             ),
           ),
         );
@@ -2878,17 +3185,114 @@ class _VisitorPageState extends State<VisitorPage> {
     );
   }
 
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return '';
-    try {
-      final dateTime = DateTime.parse(dateStr);
-      return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
-    } catch (e) {
-      return '';
+  Widget buildAllVisitorsTab() {
+    if (isLoadingVisitors) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (allVisitors.isEmpty) {
+      return const Center(child: Text("No visitors found."));
+    }
+    return ListView.builder(
+      itemCount: allVisitors.length,
+      itemBuilder: (context, index) {
+        final visitor = allVisitors[index];
+        return Card(
+          margin: const EdgeInsets.all(8),
+          child: ListTile(
+            title: Text(visitor.name),
+            subtitle: Text("ID: ${visitor.id}"),
+            trailing: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => VisitorDetailPage(visitor: visitor),
+                  ),
+                );
+              },
+              child: const Text("Details"),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> submitAction(
+      int visitorId, String selectedStatus, String remarks) async {
+    final token = await getToken();
+
+    final payload = {
+      "id": visitorId,
+      "actionId": selectedStatus == '1' ? "A" : "R",
+      "remarks": remarks,
+    };
+
+    final url =
+    Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Pending');
+
+    final response = await http.post(url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(payload));
+
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Visitor action submitted."),
+          backgroundColor: Colors.green));
+      fetchVisitorAppointments();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Error while submitting!"),
+          backgroundColor: Colors.red));
     }
   }
 
-  void onAddVisitor() async {
+  Widget _buildFrontCard(List<Color> colors, Color textColor) {
+    return _cardTemplate(colors, textColor, "PENDING", Icons.approval_rounded);
+  }
+
+  Widget _buildBackCard(List<Color> colors, Color textColor) {
+    return _cardTemplate(colors, textColor, "VISITORS", Icons.request_page_rounded);
+  }
+
+  Widget _cardTemplate(List<Color> colors, Color textColor, String label, IconData icon) {
+    return Container(
+      width: 200,
+      height: 70,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: colors),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 15,
+            backgroundColor: Colors.white,
+            child: Icon(icon, color: colors[0], size: 25),
+          ),
+          const SizedBox(width: 16),
+          Text(label,
+              style: TextStyle(
+                  color: textColor,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  void _swapCards(String type) {
+    setState(() {
+      isFront = !isFront;
+      _tabController.index = type == 'pending' ? 0 : 1;
+    });
+  }
+
+  void onAddVisitor() {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AppointmentPage()),
@@ -2899,58 +3303,88 @@ class _VisitorPageState extends State<VisitorPage> {
     });
   }
 
-  void filterPending() {
-    // Add your filtering logic here
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Pending filter clicked")),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Visitor Appointments'),
+        title: const Text("Visitor Appointments"),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            tooltip: 'Add Visitor',
             onPressed: onAddVisitor,
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const PendingVisitorListPage()),
-                  ).then((result) {
-                    if (result == 'refresh') {
-                      fetchVisitorAppointments();
-                    }
-                  });
-                },
-                child: const Text("Pending"),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: SizedBox(
+              height: 140,
+              width: 350,
+              child: Stack(
+                children: isFront
+                    ? [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: GestureDetector(
+                      onTap: () => _swapCards('visitor'),
+                      child: _buildBackCard(
+                          [const Color(0xFFFF6B6B), const Color(0xFFFF8E8E)],
+                          Colors.white),
+                    ),
+                  ),
+                  Positioned(
+                    top: 20,
+                    left: 20,
+                    child: GestureDetector(
+                      onTap: () => _swapCards('pending'),
+                      child: _buildFrontCard(
+                          [const Color(0xFFFFB199), const Color(0xFFFFEC61)],
+                          Colors.white),
+                    ),
+                  ),
+                ]
+                    : [
+                  Positioned(
+                    top: 20,
+                    left: 20,
+                    child: GestureDetector(
+                      onTap: () => _swapCards('pending'),
+                      child: _buildFrontCard(
+                          [const Color(0xFFFFB199), const Color(0xFFFFEC61)],
+                          Colors.white),
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: GestureDetector(
+                      onTap: () => _swapCards('visitor'),
+                      child: _buildBackCard(
+                          [const Color(0xFFFF6B6B), const Color(0xFFFF8E8E)],
+                          Colors.white),
+                    ),
+                  ),
+                ],
               ),
-
             ),
-            const SizedBox(height: 10),
-            Expanded(child: buildVisitorCards()),
-          ],
-        ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                buildPendingTab(),
+                buildAllVisitorsTab(),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
-
 
 class VisitorRequestModel {
   final int id;
@@ -2977,7 +3411,7 @@ class VisitorRequestModel {
 
   factory VisitorRequestModel.fromJson(Map<String, dynamic> json) {
     return VisitorRequestModel(
-      id: json['id'],
+      id: json['id'] ?? 0,
       visitorType: json['visitor'] ?? '',
       purpose: json['purpose'] ?? '',
       permitNumber: json['passNumber'] ?? '',
@@ -2990,224 +3424,366 @@ class VisitorRequestModel {
   }
 }
 
-class PendingVisitorListPage extends StatefulWidget {
-  const PendingVisitorListPage({super.key});
+class VisitorDetailsPage extends StatefulWidget {
+  final VisitorRequestModel visitor;
+  final Function(String, String) onActionSubmit;
+
+  const VisitorDetailsPage(
+      {super.key, required this.visitor, required this.onActionSubmit});
 
   @override
-  State<PendingVisitorListPage> createState() => _PendingVisitorListPageState();
+  State<VisitorDetailsPage> createState() => _VisitorDetailsPageState();
 }
 
-class _PendingVisitorListPageState extends State<PendingVisitorListPage> {
-  List<VisitorRequestModel> pendingVisitors = [];
-  bool isLoading = true;
-  String selectedStatus = 'Pending';
+class _VisitorDetailsPageState extends State<VisitorDetailsPage> {
+  String selectedStatus = '1';
   TextEditingController remarksController = TextEditingController();
-  String? base64ImageString;
-  Uint8List? imageBytes;
 
   @override
-  void initState() {
-    super.initState();
-    //fetchPendingVisitors();
-    getGetVisitorRequest();
-  }
-
-  Future<String> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('apiToken') ?? '';
-  }
-
-  Future<void> getGetVisitorRequest() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('apiToken') ?? '';
-
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorRequest');
-
-    try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print('GET VisitorRequest → Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final List<dynamic> body = jsonDecode(response.body);
-        pendingVisitors = body.map((item) => VisitorRequestModel.fromJson(item)).toList();
-        setState(() {
-          base64ImageString = body[0]['photo'].toString();
-          if (base64ImageString!.contains(',')) {
-            base64ImageString = base64ImageString!.split(',').last;
-          }
-           imageBytes = base64Decode(base64ImageString!);
-          isLoading = false;
-        });
-      } else {
-        // Error response from server
-        print("Failed to fetch visitor requests: ${response.statusCode}");
-        isLoading = false;
-      }
-    } catch (e) {
-      print("Exception during GET request: $e");
-      isLoading = false;
+  Widget build(BuildContext context) {
+    Uint8List? imageBytes;
+    if (widget.visitor.photo.isNotEmpty) {
+      String base64Image = widget.visitor.photo.contains(',')
+          ? widget.visitor.photo.split(',').last
+          : widget.visitor.photo;
+      imageBytes = base64Decode(base64Image);
     }
-  }
 
-  Widget visitorDetailsCard(VisitorRequestModel visitor) {
-    return Column(
-      children: [
-        Container(
-            width: 200,
-            height: 200,
-            margin: const EdgeInsets.all(8),
-            child: Image.memory(imageBytes!)
-
-        ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      appBar: AppBar(title: const Text("Visitor Details")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
           children: [
-            // Visitor Photo
-
-            const SizedBox(width: 20),
-            // Visitor Details
-            Expanded(
-              child: Table(
-                columnWidths: const {
-                  0: IntrinsicColumnWidth(),
-                  1: FlexColumnWidth(),
-                },
-                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-                children: [
-                  _buildRow("Id", visitor.id.toString()),
-                  _buildRow("Visitor", visitor.visitorType),
-                  _buildRow("Purpose", visitor.purpose),
-                  _buildRow("Pass Number", visitor.permitNumber),
-                  _buildRow("Name", visitor.name),
-                  _buildRow("Company", visitor.company),
-                  _buildRow("Check in Time", visitor.checkInTime),
-                  _buildRow("Check Out Time", visitor.checkOutTime),
-                ],
+            if (imageBytes != null)
+              Center(child: Image.memory(imageBytes, height: 150)),
+            const SizedBox(height: 20),
+            Text("Id                         : ${widget.visitor.id}"),
+            Text("Visitor Type        : ${widget.visitor.visitorType}"),
+            Text("Purpose              : ${widget.visitor.purpose}"),
+            Text("Pass Number     : ${widget.visitor.permitNumber}"),
+            Text("Name                  : ${widget.visitor.name}"),
+            Text("Company            : ${widget.visitor.company}"),
+            Text("Check-in Time    : ${widget.visitor.checkInTime}"),
+            Text("Check-out Time  : ${widget.visitor.checkOutTime}"),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Radio(
+                    value: '1',
+                    groupValue: selectedStatus,
+                    onChanged: (val) {
+                      setState(() => selectedStatus = val.toString());
+                    }),
+                const Text("Approved *",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 20),
+                Radio(
+                    value: '2',
+                    groupValue: selectedStatus,
+                    onChanged: (val) {
+                      setState(() => selectedStatus = val.toString());
+                    }),
+                const Text("Rejected",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            TextField(
+              controller: remarksController,
+              decoration: const InputDecoration(
+                labelText: "Remarks",
+                border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                ElevatedButton(
+                    onPressed: () {
+                      widget.onActionSubmit(
+                          selectedStatus, remarksController.text);
+                      Navigator.pop(context);
+                    },
+                    child: const Text("Submit")),
+                const SizedBox(width: 10),
+                OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Back")),
+              ],
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        // Action Radio Buttons
-        Row(
-          children: [
-            Radio(value: '1', groupValue: selectedStatus, onChanged: (val) {
-              setState(() => selectedStatus = val.toString());
-            }),
-            const Text("Approved *", style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 20),
-            Radio(value: '2', groupValue: selectedStatus, onChanged: (val) {
-              setState(() => selectedStatus = val.toString());
-            }),
-            const Text("Rejected", style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        // Remarks input
-        TextField(
-          controller: remarksController,
-          decoration: const InputDecoration(
-            labelText: "Remarks",
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Submit Buttons
-        Row(
-          children: [
-            ElevatedButton(onPressed: () => submitAction(visitor.id), child: const Text("Submit")),
-            const SizedBox(width: 10),
-            OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text("Back")),
-          ],
-        ),
-      ],
+      ),
     );
   }
+}
 
-  TableRow _buildRow(String label, String value) {
-    return TableRow(
-      children: [
-        Padding(padding: const EdgeInsets.all(4), child: Text(label)),
-        Padding(padding: const EdgeInsets.all(4), child: Text(value)),
-      ],
-    );
-  }
+class VisitorDetailPage extends StatelessWidget {
+  final VisitorRequestModel visitor;
 
-
-  Future<void> submitAction(int visitorId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('apiToken') ?? '';
-
-    print(selectedStatus);
-
-    final payload = {
-      "id": visitorId,
-      "actionId": selectedStatus == '1' ? "A" : "R",
-      "remarks": remarksController.text,
-    };
-
-    print(payload);
-
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Pending');
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode(payload),
-    );
-
-    print("Submit Response: ${response.statusCode}");
-    print("Body: ${response.body}");
-
-    if (response.statusCode == 200) {
-      Navigator.pop(context, 'refresh');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Visitor action submitted.",style: TextStyle(color: Colors.white),),backgroundColor: Colors.green,),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error while submitting! Try Again",style: TextStyle(color: Colors.white),),backgroundColor: Colors.green,),
-      );
-    }
-  }
-
-
+  const VisitorDetailPage({super.key, required this.visitor});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Pending Visitors")),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : pendingVisitors.isEmpty
-          ? const Center(child: Text("No visitor requests found."))
-          : ListView.builder(
-        itemCount: pendingVisitors.length,
-        itemBuilder: (context, index) {
-          return Card(
-            margin: const EdgeInsets.all(8),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: visitorDetailsCard(pendingVisitors[index]),
-            ),
-          );
-        },
+      appBar: AppBar(title: const Text("Visitor Details")),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          children: [
+            Text("Visitor Type        : ${visitor.visitorType}"),
+            Text("Purpose              : ${visitor.purpose}"),
+            Text("Pass Number     : ${visitor.permitNumber}"),
+            Text("Name                  : ${visitor.name}"),
+            Text("Company            : ${visitor.company}"),
+            Text("Check-in Time    : ${visitor.checkInTime}"),
+            Text("Check-out Time  : ${visitor.checkOutTime}"),
+          ],
+        ),
       ),
     );
   }
-
 }
 
+
+// class PendingVisitorListPage extends StatefulWidget {
+//   const PendingVisitorListPage({super.key});
+//
+//   @override
+//   State<PendingVisitorListPage> createState() => _PendingVisitorListPageState();
+// }
+//
+// class _PendingVisitorListPageState extends State<PendingVisitorListPage> {
+//   List<VisitorRequestModel> pendingVisitors = [];
+//   bool isLoading = true;
+//   String selectedStatus = 'Pending';
+//   TextEditingController remarksController = TextEditingController();
+//   String? base64ImageString;
+//   Uint8List? imageBytes;
+//
+//   @override
+//   void initState() {
+//     super.initState();
+//     //fetchPendingVisitors();
+//     getGetVisitorRequest();
+//   }
+//
+//   Future<String> getToken() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     return prefs.getString('apiToken') ?? '';
+//   }
+//
+//   Future<void> getGetVisitorRequest() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     final token = prefs.getString('apiToken') ?? '';
+//
+//     final url = Uri.parse(
+//         'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorRequest');
+//
+//     try {
+//       final response = await http.get(
+//         url,
+//         headers: {
+//           'Authorization': 'Bearer $token',
+//           'Content-Type': 'application/json',
+//         },
+//       );
+//
+//       print('GET VisitorRequest → Status: ${response.statusCode}');
+//       print('Response Body: ${response.body}');
+//
+//       if (response.statusCode == 200) {
+//         final List<dynamic> body = jsonDecode(response.body);
+//         pendingVisitors =
+//             body.map((item) => VisitorRequestModel.fromJson(item)).toList();
+//         setState(() {
+//           base64ImageString = body[0]['photo'].toString();
+//           if (base64ImageString!.contains(',')) {
+//             base64ImageString = base64ImageString!.split(',').last;
+//           }
+//           imageBytes = base64Decode(base64ImageString!);
+//           isLoading = false;
+//         });
+//       } else {
+//         // Error response from server
+//         print("Failed to fetch visitor requests: ${response.statusCode}");
+//         isLoading = false;
+//       }
+//     } catch (e) {
+//       print("Exception during GET request: $e");
+//       isLoading = false;
+//     }
+//   }
+//
+//   Widget visitorDetailsCard(VisitorRequestModel visitor) {
+//     return Column(
+//       children: [
+//         Container(
+//             width: 200,
+//             height: 200,
+//             margin: const EdgeInsets.all(8),
+//             child: Image.memory(imageBytes!)),
+//         Row(
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             // Visitor Photo
+//
+//             const SizedBox(width: 20),
+//             // Visitor Details
+//             Expanded(
+//               child: Table(
+//                 columnWidths: const {
+//                   0: IntrinsicColumnWidth(),
+//                   1: FlexColumnWidth(),
+//                 },
+//                 defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+//                 children: [
+//                   _buildRow("Id", visitor.id.toString()),
+//                   _buildRow("Visitor", visitor.visitorType),
+//                   _buildRow("Purpose", visitor.purpose),
+//                   _buildRow("Pass Number", visitor.permitNumber),
+//                   _buildRow("Name", visitor.name),
+//                   _buildRow("Company", visitor.company),
+//                   _buildRow("Check in Time", visitor.checkInTime),
+//                   _buildRow("Check Out Time", visitor.checkOutTime),
+//                 ],
+//               ),
+//             ),
+//           ],
+//         ),
+//         const SizedBox(height: 16),
+//         // Action Radio Buttons
+//         Row(
+//           children: [
+//             Radio(
+//                 value: '1',
+//                 groupValue: selectedStatus,
+//                 onChanged: (val) {
+//                   setState(() => selectedStatus = val.toString());
+//                 }),
+//             const Text("Approved *",
+//                 style: TextStyle(fontWeight: FontWeight.bold)),
+//             const SizedBox(width: 20),
+//             Radio(
+//                 value: '2',
+//                 groupValue: selectedStatus,
+//                 onChanged: (val) {
+//                   setState(() => selectedStatus = val.toString());
+//                 }),
+//             const Text("Rejected",
+//                 style: TextStyle(fontWeight: FontWeight.bold)),
+//           ],
+//         ),
+//         // Remarks input
+//         TextField(
+//           controller: remarksController,
+//           decoration: const InputDecoration(
+//             labelText: "Remarks",
+//             border: OutlineInputBorder(),
+//           ),
+//         ),
+//         const SizedBox(height: 12),
+//         // Submit Buttons
+//         Row(
+//           children: [
+//             ElevatedButton(
+//                 onPressed: () => submitAction(visitor.id),
+//                 child: const Text("Submit")),
+//             const SizedBox(width: 10),
+//             OutlinedButton(
+//                 onPressed: () => Navigator.pop(context),
+//                 child: const Text("Back")),
+//           ],
+//         ),
+//       ],
+//     );
+//   }
+//
+//   TableRow _buildRow(String label, String value) {
+//     return TableRow(
+//       children: [
+//         Padding(padding: const EdgeInsets.all(4), child: Text(label)),
+//         Padding(padding: const EdgeInsets.all(4), child: Text(value)),
+//       ],
+//     );
+//   }
+//
+//   Future<void> submitAction(int visitorId) async {
+//     final prefs = await SharedPreferences.getInstance();
+//     final token = prefs.getString('apiToken') ?? '';
+//
+//     print(selectedStatus);
+//
+//     final payload = {
+//       "id": visitorId,
+//       "actionId": selectedStatus == '1' ? "A" : "R",
+//       "remarks": remarksController.text,
+//     };
+//
+//     print(payload);
+//
+//     final url =
+//         Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Pending');
+//
+//     final response = await http.post(
+//       url,
+//       headers: {
+//         'Authorization': 'Bearer $token',
+//         'Content-Type': 'application/json',
+//       },
+//       body: jsonEncode(payload),
+//     );
+//
+//     print("Submit Response: ${response.statusCode}");
+//     print("Body: ${response.body}");
+//
+//     if (response.statusCode == 200) {
+//       Navigator.pop(context, 'refresh');
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(
+//           content: Text(
+//             "Visitor action submitted.",
+//             style: TextStyle(color: Colors.white),
+//           ),
+//           backgroundColor: Colors.green,
+//         ),
+//       );
+//     } else {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(
+//           content: Text(
+//             "Error while submitting! Try Again",
+//             style: TextStyle(color: Colors.white),
+//           ),
+//           backgroundColor: Colors.green,
+//         ),
+//       );
+//     }
+//   }
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(title: const Text("Pending Visitors")),
+//       body: isLoading
+//           ? const Center(child: CircularProgressIndicator())
+//           : pendingVisitors.isEmpty
+//               ? const Center(child: Text("No visitor requests found."))
+//               : ListView.builder(
+//                   itemCount: pendingVisitors.length,
+//                   itemBuilder: (context, index) {
+//                     return Card(
+//                       margin: const EdgeInsets.all(8),
+//                       child: Padding(
+//                         padding: const EdgeInsets.all(8.0),
+//                         child: visitorDetailsCard(pendingVisitors[index]),
+//                       ),
+//                     );
+//                   },
+//                 ),
+//     );
+//   }
+// }
 
 class AppointmentPage extends StatefulWidget {
   const AppointmentPage({super.key});
@@ -3233,7 +3809,6 @@ class _AppointmentPageState extends State<AppointmentPage> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController cityController = TextEditingController();
 
-
   DateTime? fromDate;
   DateTime? toDate;
 
@@ -3251,26 +3826,27 @@ class _AppointmentPageState extends State<AppointmentPage> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
-    final visitorMobileUrl = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorMobileNumbers');
+    final visitorMobileUrl = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorMobileNumbers');
 
+    final visitorMobileResponse = await http.get(visitorMobileUrl, headers: {
+      'Authorization': 'Bearer $token',
+    });
 
-      final visitorMobileResponse = await http.get(visitorMobileUrl, headers: {
-        'Authorization': 'Bearer $token',
+    if (visitorMobileResponse.statusCode == 200) {
+      setState(() {
+        officerNumbers =
+            List<String>.from(jsonDecode(visitorMobileResponse.body));
       });
-
-      if(visitorMobileResponse.statusCode == 200) {
-        setState(() {
-          officerNumbers = List<String>.from(jsonDecode(visitorMobileResponse.body));
-        });
-        print('visitorMobileResponse: ${visitorMobileResponse.body}');
-      } else {
-        print('Error');
-      }
-
+      print('visitorMobileResponse: ${visitorMobileResponse.body}');
+    } else {
+      print('Error');
+    }
   }
 
   Future<void> fetchVisitorDetails(String mobileNumber) async {
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorDetail?MobileNumber=$mobileNumber');
+    final url = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorDetail?MobileNumber=$mobileNumber');
 
     final token = await getToken();
 
@@ -3300,7 +3876,6 @@ class _AppointmentPageState extends State<AppointmentPage> {
     }
   }
 
-
   void clearFormFields() {
     setState(() {
       nameController.clear();
@@ -3315,21 +3890,22 @@ class _AppointmentPageState extends State<AppointmentPage> {
     return prefs.getString('apiToken') ?? '';
   }
 
-
-
   Future<void> fetchDropdownData() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
-    final visitorTypeUrl = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorType');
-    final visitorPurposeUrl = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorPurpose');
+    final visitorTypeUrl = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorType');
+    final visitorPurposeUrl = Uri.parse(
+        'http://hrmwebapi.lemeniz.com/api/Appointment/GetVisitorPurpose');
 
     try {
       final visitorTypeResponse = await http.get(visitorTypeUrl, headers: {
         'Authorization': 'Bearer $token',
       });
 
-      final visitorPurposeResponse = await http.get(visitorPurposeUrl, headers: {
+      final visitorPurposeResponse =
+          await http.get(visitorPurposeUrl, headers: {
         'Authorization': 'Bearer $token',
       });
 
@@ -3365,8 +3941,8 @@ class _AppointmentPageState extends State<AppointmentPage> {
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
-    final url = Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Create');
-
+    final url =
+        Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Create');
 
     DateTime from = DateTime.parse(fromDate!.toIso8601String());
     DateTime to = DateTime.parse(toDate!.toIso8601String());
@@ -3400,12 +3976,22 @@ class _AppointmentPageState extends State<AppointmentPage> {
 
       if (response.statusCode == 200) {
         Navigator.pop(context, 'refresh');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Submitted."),
+            backgroundColor: Colors.green,
+          ),
+        );
       } else {
         print('Failed: ${response.body}');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: ${response.reasonPhrase}')),
+          SnackBar(
+            content: Text('Failed: ${response.reasonPhrase}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
+
     } catch (e) {
       print('Submit Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3449,7 +4035,8 @@ class _AppointmentPageState extends State<AppointmentPage> {
               fullDateTime.year,
               fullDateTime.month,
               fullDateTime.day,
-              18, 0,
+              18,
+              0,
             );
           } else {
             toDate = fullDateTime;
@@ -3458,7 +4045,6 @@ class _AppointmentPageState extends State<AppointmentPage> {
       }
     }
   }
-
 
   String _formatDateTime(DateTime? dt) =>
       dt != null ? DateFormat('dd-MM-yyyy hh:mm a').format(dt) : '';
@@ -3470,162 +4056,173 @@ class _AppointmentPageState extends State<AppointmentPage> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: selectedVisitorTypeId != 0 ? selectedVisitorTypeId : null,
-                      decoration: const InputDecoration(labelText: 'View Template *'),
-                      items: visitorTypes
-                          .map((item) => DropdownMenuItem<int>(
-                        value: item['id'],
-                        child: Text(item['name']?.toString() ?? ''),
-                      ))
-                          .toList(),
-                      onChanged: (val) {
-                        setState(() {
-                          selectedVisitorTypeId = val!;
-                        });
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            value: selectedVisitorTypeId != 0
+                                ? selectedVisitorTypeId
+                                : null,
+                            decoration: const InputDecoration(
+                                labelText: 'View Template *'),
+                            items: visitorTypes
+                                .map((item) => DropdownMenuItem<int>(
+                                      value: item['id'],
+                                      child:
+                                          Text(item['name']?.toString() ?? ''),
+                                    ))
+                                .toList(),
+                            onChanged: (val) {
+                              setState(() {
+                                selectedVisitorTypeId = val!;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            value: selectedVisitorPurposeId != 0
+                                ? selectedVisitorPurposeId
+                                : null,
+                            decoration:
+                                const InputDecoration(labelText: 'Purpose *'),
+                            items: visitorPurposes
+                                .map((item) => DropdownMenuItem<int>(
+                                      value: item['id'],
+                                      child:
+                                          Text(item['name']?.toString() ?? ''),
+                                    ))
+                                .toList(),
+                            onChanged: (val) {
+                              setState(() {
+                                selectedVisitorPurposeId = val!;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Name & Mobile
+                    TextFormField(
+                      controller: mobileController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 10,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(10),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Mobile Number *',
+                        counterText: '', // hides character counter
+                        labelStyle: TextStyle(fontSize: 12),
+                      ),
+                      onChanged: (value) {
+                        if (value.length == 10) {
+                          fetchVisitorDetails(value);
+                        } else {
+                          clearFormFields();
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Mobile number is required';
+                        } else if (value.length != 10) {
+                          return 'Enter a valid 10-digit number';
+                        }
+                        return null;
                       },
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: selectedVisitorPurposeId != 0 ? selectedVisitorPurposeId : null,
-                      decoration: const InputDecoration(labelText: 'Purpose *'),
-                      items: visitorPurposes
-                          .map((item) => DropdownMenuItem<int>(
-                        value: item['id'],
-                        child: Text(item['name']?.toString() ?? ''),
-                      ))
-                          .toList(),
-                      onChanged: (val) {
-                        setState(() {
-                          selectedVisitorPurposeId = val!;
-                        });
-                      },
+
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Name *'),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Name is required' : null,
                     ),
-                  ),
-                ],
+                    TextFormField(
+                      controller: companyController,
+                      decoration:
+                          const InputDecoration(labelText: 'Company Name *'),
+                      validator: (value) =>
+                          value!.isEmpty ? 'Company name is required' : null,
+                    ),
+                    TextFormField(
+                      controller: emailController,
+                      decoration: const InputDecoration(labelText: 'Email Id'),
+                    ),
+                    TextFormField(
+                      controller: cityController,
+                      decoration: const InputDecoration(labelText: 'City'),
+                    ),
 
-              ),
-              const SizedBox(height: 12),
+                    const SizedBox(height: 16),
 
-              // Name & Mobile
-              TextFormField(
-                controller: mobileController,
-                keyboardType: TextInputType.number,
-                maxLength: 10,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(10),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'Mobile Number *',
-                  counterText: '', // hides character counter
-                  labelStyle: TextStyle(fontSize: 12),
+                    // From & To
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _selectDateTime(context, true),
+                            child: AbsorbPointer(
+                              child: TextFormField(
+                                decoration:
+                                    const InputDecoration(labelText: 'From'),
+                                controller: TextEditingController(
+                                  text: _formatDateTime(fromDate),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _selectDateTime(context, false),
+                            child: AbsorbPointer(
+                              child: TextFormField(
+                                decoration:
+                                    const InputDecoration(labelText: 'To'),
+                                controller: TextEditingController(
+                                  text: _formatDateTime(toDate),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        ElevatedButton(
+                          onPressed: isSubmitting ? null : submitForm,
+                          child: const Text('Create'),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    )
+                  ],
                 ),
-                onChanged: (value) {
-                  if (value.length == 10) {
-                    fetchVisitorDetails(value);
-                  } else {
-                    clearFormFields();
-                  }
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Mobile number is required';
-                  } else if (value.length != 10) {
-                    return 'Enter a valid 10-digit number';
-                  }
-                  return null;
-                },
               ),
-
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name *'),
-                validator: (value) => value!.isEmpty ? 'Name is required' : null,
-              ),
-              TextFormField(
-                controller: companyController,
-                decoration: const InputDecoration(labelText: 'Company Name *'),
-                validator: (value) => value!.isEmpty ? 'Company name is required' : null,
-              ),
-              TextFormField(
-                controller: emailController,
-                decoration: const InputDecoration(labelText: 'Email Id'),
-              ),
-              TextFormField(
-                controller: cityController,
-                decoration: const InputDecoration(labelText: 'City'),
-              ),
-
-              const SizedBox(height: 16),
-
-              // From & To
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _selectDateTime(context, true),
-                      child: AbsorbPointer(
-                        child: TextFormField(
-                          decoration: const InputDecoration(labelText: 'From'),
-                          controller: TextEditingController(
-                            text: _formatDateTime(fromDate),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => _selectDateTime(context, false),
-                      child: AbsorbPointer(
-                        child: TextFormField(
-                          decoration: const InputDecoration(labelText: 'To'),
-                          controller: TextEditingController(
-                            text: _formatDateTime(toDate),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  ElevatedButton(
-                    onPressed: isSubmitting ? null : submitForm,
-                    child: const Text('Create'),
-                  ),
-                  const SizedBox(width: 12),
-                  OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              )
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
-
 
 class Menupage extends StatelessWidget {
   const Menupage({Key? key}) : super(key: key);
@@ -4523,82 +5120,7 @@ class _ApproverPageState extends State<ApproverPage> {
             ),
           ),
 
-          // Container(
-          //   margin: const EdgeInsets.all(16),
-          //   decoration: BoxDecoration(
-          //     border: Border.all(color: Colors.grey),
-          //     borderRadius: BorderRadius.circular(6),
-          //   ),
-          //   child: Row(
-          //     children: [
-          //       // Expanded(
-          //       //   child: GestureDetector(
-          //       //     onTap: () {
-          //       //       setState(() {
-          //       //         isApproverSelected = true;
-          //       //       });
-          //       //     },
-          //       //     child: Container(
-          //       //       color: isApproverSelected ? Colors.green : Colors.white,
-          //       //       padding: const EdgeInsets.symmetric(vertical: 12),
-          //       //       alignment: Alignment.center,
-          //       //       child: Text(
-          //       //         'APPROVER',
-          //       //         style: TextStyle(
-          //       //           color:
-          //       //               isApproverSelected ? Colors.white : Colors.black,
-          //       //           fontWeight: FontWeight.bold,
-          //       //         ),
-          //       //       ),
-          //       //     ),
-          //       //   ),
-          //       // ),Expanded(
-          //       //   child: GestureDetector(
-          //       //     onTap: () {
-          //       //       setState(() {
-          //       //         isApproverSelected = true;
-          //       //       });
-          //       //     },
-          //       //     child: Container(
-          //       //       color: isApproverSelected ? Colors.green : Colors.white,
-          //       //       padding: const EdgeInsets.symmetric(vertical: 12),
-          //       //       alignment: Alignment.center,
-          //       //       child: Text(
-          //       //         'APPROVER',
-          //       //         style: TextStyle(
-          //       //           color:
-          //       //               isApproverSelected ? Colors.white : Colors.black,
-          //       //           fontWeight: FontWeight.bold,
-          //       //         ),
-          //       //       ),
-          //       //     ),
-          //       //   ),
-          //       // ),
-          //       // Expanded(
-          //       //   child: GestureDetector(
-          //       //     onTap: () {
-          //       //       setState(() {
-          //       //         isApproverSelected = false;
-          //       //       });
-          //       //     },
-          //       //     child: Container(
-          //       //       color: !isApproverSelected ? Colors.green : Colors.white,
-          //       //       padding: const EdgeInsets.symmetric(vertical: 12),
-          //       //       alignment: Alignment.center,
-          //       //       child: Text(
-          //       //         'REQUESTER',
-          //       //         style: TextStyle(
-          //       //           color:
-          //       //               !isApproverSelected ? Colors.white : Colors.black,
-          //       //           fontWeight: FontWeight.bold,
-          //       //         ),
-          //       //       ),
-          //       //     ),
-          //       //   ),
-          //       // ),
-          //     ],
-          //   ),
-          // ),
+
           Expanded(
             child: isApproverSelected
                 ? ApproverTable(data: approverData)
@@ -5897,7 +6419,7 @@ class _AlertPageState extends State<AlertPage> {
   }
 
   void checkRegister() async {
-     isLoggedIn = await getBool('isRegister');
+    isLoggedIn = await getBool('isRegister');
     print('Logged in: $isLoggedIn');
   }
 
@@ -5911,7 +6433,8 @@ class _AlertPageState extends State<AlertPage> {
     return prefs.getBool(key) ?? false;
   }
 
-  Future<void> registerFirst(String base64Image, String punchStatus, File profilePhoto) async {
+  Future<void> registerFirst(
+      String base64Image, String punchStatus, File profilePhoto) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
@@ -5963,7 +6486,9 @@ class _AlertPageState extends State<AlertPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => HomePage(capturedImage: profilePhoto,),
+          builder: (context) => HomePage(
+            capturedImage: profilePhoto,
+          ),
         ),
       );
     } else {
@@ -5971,37 +6496,34 @@ class _AlertPageState extends State<AlertPage> {
     }
   }
 
-
-
   Future<void> registerPunch(
-      String base64Image,
-      String punchStatus,
-      File profilePhoto,
-      BuildContext context, // ✅ Pass context here
-      ) async {
+    String base64Image,
+    String punchStatus,
+    File profilePhoto,
+    BuildContext context, // ✅ Pass context here
+  ) async {
     if (isLoggedIn == false) {
       print('isLoggedIn == false');
       registerFirst(base64Image, punchStatus, profilePhoto);
     } else if (isLoggedIn == true) {
       print('isLoggedIn == true');
-      await verifyPhoto(base64Image, punchStatus, profilePhoto, context); // ✅ Pass context and punchStatus
+      await verifyPhoto(base64Image, punchStatus, profilePhoto,
+          context); // ✅ Pass context and punchStatus
     }
   }
 
   Future<void> verifyPhoto(
-      String imagePath,
-      String punchStatus,
-      File profilePhoto,
-      BuildContext context,
-      ) async {
+    String imagePath,
+    String punchStatus,
+    File profilePhoto,
+    BuildContext context,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('apiToken') ?? '';
 
     print('verify started....');
 
-    Map<String, String> body = {
-      "File": imagePath
-    };
+    Map<String, String> body = {"File": imagePath};
 
     final response = await http.post(
       Uri.parse('http://hrmwebapi.lemeniz.com/api/Attendance/VerifyImage'),
@@ -6193,7 +6715,6 @@ class _AlertPageState extends State<AlertPage> {
 
         // if (!mounted) return;
         registerPunch(base64Image, punchStatus, _capturedImage!, context);
-
       } else {
         print("Captured image does not exist.");
       }
@@ -6204,8 +6725,6 @@ class _AlertPageState extends State<AlertPage> {
       );
     }
   }
-
-
 
   void _openMap(String latitude, String longitude) async {
     final Uri googleMapUrl = Uri.parse(
@@ -6294,7 +6813,9 @@ class _AlertPageState extends State<AlertPage> {
                               style: TextStyle(
                                 color: (punchStatus ?? 'IN') == 'IN'
                                     ? Colors.green
-                                    : (punchStatus == 'OUT' ? Colors.red : Colors.black),
+                                    : (punchStatus == 'OUT'
+                                        ? Colors.red
+                                        : Colors.black),
                                 fontSize: 32,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 2,
@@ -6303,32 +6824,32 @@ class _AlertPageState extends State<AlertPage> {
                           ),
                         ),
                         SizedBox(height: 15),
-
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             RichText(
                               text: TextSpan(
-                                style: const TextStyle(fontSize: 16, color: Colors.black),
+                                style: const TextStyle(
+                                    fontSize: 16, color: Colors.black),
                                 children: [
-                                  const TextSpan(text: 'Last Attendance Marked : '),
+                                  const TextSpan(
+                                      text: 'Last Attendance Marked : '),
                                   TextSpan(
                                     text: punchStatus == 'IN'
                                         ? 'OUT'
                                         : punchStatus == 'OUT'
-                                        ? 'IN'
-                                        : punchStatus ?? '',
+                                            ? 'IN'
+                                            : punchStatus ?? '',
                                     style: TextStyle(
                                       color: punchStatus == 'IN'
                                           ? Colors.red
                                           : punchStatus == 'OUT'
-                                          ? Colors.green
-                                          : Colors.black,
+                                              ? Colors.green
+                                              : Colors.black,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-
                                 ],
                               ),
                             ),
@@ -6336,8 +6857,6 @@ class _AlertPageState extends State<AlertPage> {
                         ),
                         SizedBox(height: 5),
                         Text(' (${formattedDate} : ${formattedTime})')
-
-
                       ],
                     ),
                   ),
@@ -6426,6 +6945,7 @@ class LogPage extends StatefulWidget {
 class _LogPageState extends State<LogPage> with TickerProviderStateMixin {
   String? empId;
   String? empName;
+  bool isLoading = true;
 
   final List<String> months = [
     'January',
@@ -7137,9 +7657,7 @@ class _DutyDetailRow extends StatelessWidget {
   }
 }
 
-// Replace with your actual token handling
-// const String token =
-//     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJBVDAwOTkiLCJqdGkiOiI2ZDI0M2RiNi0zNTc2LTQzNDktYmEyYy1jMGFiMmI3ZTMxYTMiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1laWRlbnRpZmllciI6IjExY2MzNGM0LTI5ZTgtNDFmMS1iNmI4LTU4YTgzZDAyNzk0YSIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWUiOiJBVDAwOTkiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiRW1wbG95ZWVBVCIsIkVtcGxveWVlIiwiVHJhaW5pbmdNYW5hZ2VtZW50IiwiRGFzaGJvYXJkIiwiTGVhdmVQZXJtaXNzaW9uUmVxdWVzdCIsIlZpc2l0b3JNYW5hZ2VtZW50Il0sImV4cCI6MTc0Njc4OTY1OSwiaXNzIjoiSFJNIiwiYXVkIjoiSFJNQXBwVXNlcnMifQ.dcsZ2sZOe2yBcfX59jAiZ1AcCk3_KiHb17DMblm9ozY';
+
 
 class ApplyLeavePage extends StatefulWidget {
   final String employeeId;
@@ -9148,7 +9666,7 @@ class _BiometricPageState extends State<BiometricPage> {
         setState(() {
           _authStatus = 'Authentication successful';
         });
-print('Authentication successful');
+        print('Authentication successful');
         await prefs.setBool('isBiometricEnabled', true);
 
         bool birthday = prefs.getBool('birthday') ?? false;
@@ -9336,72 +9854,6 @@ class LogoutPage extends StatelessWidget {
   }
 }
 
-// class PanicAlertPage extends StatelessWidget {
-//   final String name;
-//   final String designation;
-//   final double? lat;
-//   final double? lon;
-//
-//   const PanicAlertPage({
-//     super.key,
-//     required this.name,
-//     required this.designation,
-//     this.lat,
-//     this.lon,
-//   });
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     final DateTime now = DateTime.now();
-//     final String formattedDate = DateFormat('yyyy-MM-dd').format(now);
-//     final String formattedTime = DateFormat('hh:mm:ss a').format(now);
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: const Text("Panic Alert"),
-//         backgroundColor: const Color(0xFF21465B),
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.all(20.0),
-//         child: Card(
-//           elevation: 4,
-//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-//           child: Padding(
-//             padding: const EdgeInsets.all(20.0),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 const Center(
-//                   child: Text(
-//                     'Alert Sent Successfully!',
-//                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red),
-//                   ),
-//                 ),
-//                 const SizedBox(height: 20),
-//                 _buildInfoLine("Name", name),
-//                 _buildInfoLine("Designation", designation),
-//                 _buildInfoLine("Latitude", lat?.toStringAsFixed(6) ?? 'Unavailable'),
-//                 _buildInfoLine("Longitude", lon?.toStringAsFixed(6) ?? 'Unavailable'),
-//                 _buildInfoLine("Date", formattedDate),
-//                 _buildInfoLine("Time", formattedTime),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-//
-//   Widget _buildInfoLine(String label, String value) {
-//     return Padding(
-//       padding: const EdgeInsets.symmetric(vertical: 8.0),
-//       child: Text(
-//         "$label: $value",
-//         style: const TextStyle(fontSize: 18, color: Colors.black87),
-//       ),
-//     );
-//   }
-// }
 
 class PendingPage extends StatefulWidget {
   @override
@@ -9427,8 +9879,6 @@ class _PendingPageState extends State<PendingPage>
       return dateTimeStr;
     }
   }
-
-
 
   @override
   void initState() {
@@ -9518,8 +9968,6 @@ class _PendingPageState extends State<PendingPage>
     super.dispose();
   }
 
-
-
   @override
   @override
   Widget build(BuildContext context) {
@@ -9528,91 +9976,90 @@ class _PendingPageState extends State<PendingPage>
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : animatedPendingList.isEmpty
-          ? const Center(child: Text("No pending requests"))
-          : ListView.builder(
-        itemCount: animatedPendingList.length,
-        itemBuilder: (context, index) {
-          final item = animatedPendingList[index];
-          final animation = _animations[index];
+              ? const Center(child: Text("No pending requests"))
+              : ListView.builder(
+                  itemCount: animatedPendingList.length,
+                  itemBuilder: (context, index) {
+                    final item = animatedPendingList[index];
+                    final animation = _animations[index];
 
-          return SlideTransition(
-            position: animation,
-            child: Card(
-              margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              elevation: 3,
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            "${item['employeeId']} - ${item['id']}",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
+                    return SlideTransition(
+                      position: animation,
+                      child: Card(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        elevation: 3,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      "${item['employeeId']} - ${item['id']}",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => LeaveDetailsPage(
+                                            leaveData: item,
+                                            requestId: item['id'],
+                                            actionButton: 'true',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text("Details"),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Table(
+                                columnWidths: const {
+                                  0: IntrinsicColumnWidth(),
+                                  1: FlexColumnWidth(),
+                                },
+                                children: [
+                                  _buildTableRow(
+                                      "Reason       :", item['title'] ?? 'N/A'),
+                                  _buildTableRow("Type            :",
+                                      item['leaveEntryType'] ?? 'N/A'),
+                                  _buildTableRow("Leave On     :",
+                                      formatDateTime(item['startOn'] ?? '')),
+                                  _buildTableRow("Created On  :",
+                                      formatDateTime(item['createdOn'] ?? '')),
+                                  _buildTableRow("Leave Type  :",
+                                      item['leaveType'] ?? 'N/A'),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    LeaveDetailsPage(
-                                      leaveData: item,
-                                      requestId: item['id'],
-                                      actionButton: 'true',
-                                    ),
-                              ),
-                            );
-                          },
-                          child: const Text("Details"),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Table(
-                      columnWidths: const {
-                        0: IntrinsicColumnWidth(),
-                        1: FlexColumnWidth(),
-                      },
-                      children: [
-                        _buildTableRow("Reason       :", item['title'] ??
-                            'N/A'),
-                        _buildTableRow(
-                            "Type            :", item['leaveEntryType'] ??
-                            'N/A'),
-                        _buildTableRow("Leave On     :", formatDateTime(
-                            item['startOn'] ?? '')),
-                        _buildTableRow("Created On  :", formatDateTime(
-                            item['createdOn'] ?? '')),
-                        _buildTableRow("Leave Type  :", item['leaveType'] ??
-                            'N/A'),
-                      ],
-                    ),
-                  ],
+                      ),
+                    );
+                  },
                 ),
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
-
 }
 
 TableRow _buildTableRow(String label, String value) {
@@ -9791,11 +10238,13 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
             Text("Employee ID  : ${leaveData['employeeId'] ?? ''}"),
             Text("Name             : ${leaveData['createUserRealName'] ?? ''}"),
             Text("Reason          : ${leaveData['title'] ?? 'null'}"),
-            Text("Leave On       : ${formatDateTime(leaveData['startOn'] ?? '')}"),
-            Text("Type               : ${leaveData['leaveEntryType'] ?? 'null'}"),
+            Text(
+                "Leave On       : ${formatDateTime(leaveData['startOn'] ?? '')}"),
+            Text(
+                "Type               : ${leaveData['leaveEntryType'] ?? 'null'}"),
             Text("Remarks        : ${leaveData['remarks'] ?? 'null'}"),
-            Text("Created On    : ${formatDateTime(leaveData['createdOn'] ?? '')}"),
-
+            Text(
+                "Created On    : ${formatDateTime(leaveData['createdOn'] ?? '')}"),
             const SizedBox(height: 20),
             if (widget.actionButton == 'true') ...[
               const Text("Select Action:"),
@@ -9856,14 +10305,13 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
                   if (swipeTime != null && swipeTime.isNotEmpty) {
                     try {
                       final parsedDate = DateTime.parse(swipeTime);
-                      final formatter = DateFormat('dd/MM/yyyy  HH:mm'); // 24-hour format
+                      final formatter =
+                          DateFormat('dd/MM/yyyy  HH:mm'); // 24-hour format
                       formattedSwipeTime = formatter.format(parsedDate);
                     } catch (e) {
                       formattedSwipeTime = 'Invalid date';
                     }
                   }
-
-
 
                   final DateTime? dateTime = swipeTime != null
                       ? DateTime.tryParse(swipeTime)?.toLocal()
@@ -9878,8 +10326,7 @@ class _LeaveDetailsState extends State<LeaveDetailsPage> {
                   final time = formattedSwipeTime;
                   final status = log['punch'] ?? 'N/A';
                   final location = log['location'] ?? '';
-                  final color =
-                      (status == 'In') ? Colors.green : Colors.red;
+                  final color = (status == 'In') ? Colors.green : Colors.red;
                   final empId = log['employeeId']?.toString() ?? '';
                   final empName = log['name']?.toString() ?? '';
 
@@ -10125,13 +10572,19 @@ class _ApprovedPageState extends State<ApprovedPage>
                                     1: FlexColumnWidth(),
                                   },
                                   children: [
-                                    _buildTableRows("Reason        :", item['title'] ?? 'N/A'),
-                                    _buildTableRows("Type             :", item['leaveEntryType'] ?? 'N/A'),
-                                    _buildTableRows("Leave On      :", formatDateTime(item['startOn'] ?? '')),
-                                    _buildTableRows("Created On   :", formatDateTime(item['createdOn'] ?? '')),
-                                    _buildTableRows("Leave Type   :", item['leaveType'] ?? 'null'),
+                                    _buildTableRows("Reason        :",
+                                        item['title'] ?? 'N/A'),
+                                    _buildTableRows("Type             :",
+                                        item['leaveEntryType'] ?? 'N/A'),
+                                    _buildTableRows("Leave On      :",
+                                        formatDateTime(item['startOn'] ?? '')),
+                                    _buildTableRows(
+                                        "Created On   :",
+                                        formatDateTime(
+                                            item['createdOn'] ?? '')),
+                                    _buildTableRows("Leave Type   :",
+                                        item['leaveType'] ?? 'null'),
                                   ],
-
                                 ),
                               ],
                             ),
@@ -10334,13 +10787,21 @@ class _RejectedPageState extends State<RejectedPage>
                                     defaultVerticalAlignment:
                                         TableCellVerticalAlignment.middle,
                                     children: [
-                                      _buildTableRowes("Reason         :", item['title'] ?? 'N/A'),
-                                      _buildTableRowes("Type             :", item['leaveEntryType'] ?? 'N/A'),
-                                      _buildTableRowes("Leave On     :", formatDateTime(item['startOn'] ?? '')),
-                                      _buildTableRowes("Created On  :", formatDateTime(item['createdOn'] ?? '')),
-                                      _buildTableRowes("Leave Type  :", item['leaveType'] ?? 'N/A'),
+                                      _buildTableRowes("Reason         :",
+                                          item['title'] ?? 'N/A'),
+                                      _buildTableRowes("Type             :",
+                                          item['leaveEntryType'] ?? 'N/A'),
+                                      _buildTableRowes(
+                                          "Leave On     :",
+                                          formatDateTime(
+                                              item['startOn'] ?? '')),
+                                      _buildTableRowes(
+                                          "Created On  :",
+                                          formatDateTime(
+                                              item['createdOn'] ?? '')),
+                                      _buildTableRowes("Leave Type  :",
+                                          item['leaveType'] ?? 'N/A'),
                                     ],
-
                                   ),
                                 ],
                               ),
