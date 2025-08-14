@@ -3135,8 +3135,12 @@ class _VisitorAppointmentsPageState extends State<VisitorAppointmentsPage>
       if (response.statusCode == 200) {
         final List<dynamic> body = jsonDecode(response.body);
         setState(() {
-          allVisitors =
-              body.map((item) => VisitorRequestModel.fromJson(item)).toList();
+          allVisitors = body
+              .map((item) => VisitorRequestModel.fromJson(item))
+              .toList()
+              .reversed
+              .toList();
+
           isLoadingVisitors = false;
         });
       } else {
@@ -3251,16 +3255,16 @@ class _VisitorAppointmentsPageState extends State<VisitorAppointmentsPage>
   }
 
   Widget _buildFrontCard(List<Color> colors, Color textColor) {
-    return _cardTemplate(colors, textColor, "PENDING", Icons.approval_rounded);
+    return _cardTemplate(colors, textColor, "APPOINTMENT FROM GATE", Icons.approval_rounded);
   }
 
   Widget _buildBackCard(List<Color> colors, Color textColor) {
-    return _cardTemplate(colors, textColor, "VISITORS", Icons.request_page_rounded);
+    return _cardTemplate(colors, textColor, "APPOINTMENT GIVEN BY YOU", Icons.request_page_rounded);
   }
 
   Widget _cardTemplate(List<Color> colors, Color textColor, String label, IconData icon) {
     return Container(
-      width: 200,
+      width: 300,
       height: 70,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -3278,7 +3282,7 @@ class _VisitorAppointmentsPageState extends State<VisitorAppointmentsPage>
           Text(label,
               style: TextStyle(
                   color: textColor,
-                  fontSize: 20,
+                  fontSize: 15,
                   fontWeight: FontWeight.w500)),
         ],
       ),
@@ -3299,6 +3303,7 @@ class _VisitorAppointmentsPageState extends State<VisitorAppointmentsPage>
     ).then((result) {
       if (result == 'refresh') {
         fetchVisitorAppointments();
+        fetchAllVisitors();
       }
     });
   }
@@ -3802,6 +3807,8 @@ class _AppointmentPageState extends State<AppointmentPage> {
   int? selectedVisitorTypeId;
   int? selectedVisitorPurposeId;
   String? selectedMobileNumber;
+  String? formatted;
+  String? endTime;
 
   final TextEditingController mobileController = TextEditingController();
   final TextEditingController nameController = TextEditingController();
@@ -3860,6 +3867,12 @@ class _AppointmentPageState extends State<AppointmentPage> {
       );
 
       if (response.statusCode == 200) {
+        DateTime now = DateTime.now().add(Duration(minutes: 5));
+        formatted = formatDateTimeWithFiveMinutes(now);
+        DateTime sixPM = defaultSixPMToday();
+        print(formatDateTime(sixPM));
+        endTime = formatDateTime(sixPM);
+        print(formatted);
         final data = json.decode(response.body);
         setState(() {
           nameController.text = data['name'] ?? '';
@@ -3930,7 +3943,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
   Future<void> submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (fromDate == null || toDate == null) {
+    if (formatted == null || endTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select both From and To dates')),
       );
@@ -3944,12 +3957,6 @@ class _AppointmentPageState extends State<AppointmentPage> {
     final url =
         Uri.parse('http://hrmwebapi.lemeniz.com/api/Appointment/Create');
 
-    DateTime from = DateTime.parse(fromDate!.toIso8601String());
-    DateTime to = DateTime.parse(toDate!.toIso8601String());
-
-    String formattedFrom = DateFormat("dd-MM-yyyy hh:mm a").format(from);
-    String formattedTo = DateFormat("dd-MM-yyyy hh:mm a").format(to);
-
     final body = {
       "visitorTypeId": selectedVisitorTypeId,
       "visitorPurposeId": selectedVisitorPurposeId,
@@ -3958,8 +3965,8 @@ class _AppointmentPageState extends State<AppointmentPage> {
       "mobileNumber": mobileController.text,
       "emailId": emailController.text.trim(),
       "city": cityController.text.trim(),
-      "from": formattedFrom,
-      "to": formattedTo,
+      "from": formatted,
+      "to": endTime,
     };
 
     print(body);
@@ -3975,6 +3982,7 @@ class _AppointmentPageState extends State<AppointmentPage> {
       );
 
       if (response.statusCode == 200) {
+        print(response.body);
         Navigator.pop(context, 'refresh');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -4002,52 +4010,18 @@ class _AppointmentPageState extends State<AppointmentPage> {
     }
   }
 
-  Future<void> _selectDateTime(BuildContext context, bool isFrom) async {
-    final now = DateTime.now();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: now,
-      lastDate: DateTime(now.year + 1),
-    );
-
-    if (pickedDate != null) {
-      final pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(now),
-      );
-
-      if (pickedTime != null) {
-        final fullDateTime = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          pickedTime.hour,
-          pickedTime.minute,
-        );
-
-        setState(() {
-          if (isFrom) {
-            fromDate = fullDateTime;
-
-            // Set default toDate to same day at 6:00 PM
-            toDate = DateTime(
-              fullDateTime.year,
-              fullDateTime.month,
-              fullDateTime.day,
-              18,
-              0,
-            );
-          } else {
-            toDate = fullDateTime;
-          }
-        });
-      }
-    }
+  String formatDateTime(DateTime dateTime) {
+    return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
   }
 
-  String _formatDateTime(DateTime? dt) =>
-      dt != null ? DateFormat('dd-MM-yyyy hh:mm a').format(dt) : '';
+  String formatDateTimeWithFiveMinutes(DateTime dateTime) {
+    return DateFormat('dd-MM-yyyy hh:mm a').format(dateTime);
+  }
+
+  DateTime defaultSixPMToday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, 18, 0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -4171,13 +4145,13 @@ class _AppointmentPageState extends State<AppointmentPage> {
                       children: [
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => _selectDateTime(context, true),
+                            onTap: () {},
                             child: AbsorbPointer(
                               child: TextFormField(
                                 decoration:
                                     const InputDecoration(labelText: 'From'),
                                 controller: TextEditingController(
-                                  text: _formatDateTime(fromDate),
+                                  text: formatted,
                                 ),
                               ),
                             ),
@@ -4186,13 +4160,13 @@ class _AppointmentPageState extends State<AppointmentPage> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => _selectDateTime(context, false),
+                            onTap: () {},
                             child: AbsorbPointer(
                               child: TextFormField(
                                 decoration:
                                     const InputDecoration(labelText: 'To'),
                                 controller: TextEditingController(
-                                  text: _formatDateTime(toDate),
+                                  text: endTime,
                                 ),
                               ),
                             ),
