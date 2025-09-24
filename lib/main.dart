@@ -193,19 +193,26 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-          child: Column(
+    return Container(
+      key: const ValueKey(5),
+      color: Colors.white,
+      width: double.infinity,
+      height: double.infinity,
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+
           Lottie.asset(
-            'assets/Loading animation blue.json',
-            width: 300,
-            height: 300,
+            'assets/Welcome.json',
+            width: 250,
+            height: 250,
             fit: BoxFit.contain,
+            repeat: true,
           ),
+
+
         ],
-      )),
+      ),
     );
   }
 }
@@ -334,93 +341,114 @@ class _LoginPageState extends State<LoginPage> {
       body: Stack(
         children: [
           Container(
-            height: MediaQuery.of(context).size.height,
             decoration: const BoxDecoration(
               image: DecorationImage(
-                image: AssetImage('assets/banner.png'),
+                image: AssetImage("assets/hrms.png"),
                 fit: BoxFit.cover,
               ),
             ),
           ),
           Center(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
-                        offset: Offset(0, 4),
+            child:SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 40),
+
+
+                  AnimatedOpacity(
+                    // opacity: _showLogo ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 800),
+                    opacity: 1.0,
+                    child: Center(
+                      child: Image.asset(
+                        "assets/logo2.png",
+                        height: 120,
                       ),
-                    ],
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/l logo.png',
-                        height: 100,
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Login',
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (isBiometricEnabled == false)
-                        TextField(
-                          controller: _usernameController,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(
-                            labelText: 'Enter username',
-                            border: OutlineInputBorder(),
+
+                  const SizedBox(height: 10),
+
+
+                  Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
                           ),
-                        ),
-                      const SizedBox(height: 20),
-                      if (isBiometricEnabled == false)
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Password',
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Image.asset(
+                          //   'assets/l logo.png',
+                          //   height: 100,
+                          // ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Login',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 34,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      const SizedBox(height: 8),
-                      if (isBiometricEnabled == false)
-                        PasswordField(controller: _passwordController),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xff09355a),
-                            padding: const EdgeInsets.symmetric(vertical: 15),
-                          ),
-                          onPressed: () {
-                            _login();
-                            //deleteFCM();
-                          },
+                          const SizedBox(height: 8),
+                          if (isBiometricEnabled == false)
+                            TextField(
+                              controller: _usernameController,
+                              textCapitalization: TextCapitalization.characters,
+                              decoration: const InputDecoration(
+                                labelText: 'Enter username',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          const SizedBox(height: 20),
+                          if (isBiometricEnabled == false)
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Password',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          if (isBiometricEnabled == false)
+                            PasswordField(controller: _passwordController),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xff09355a),
+                                padding: const EdgeInsets.symmetric(vertical: 15),
+                              ),
+                              onPressed: () {
+                                _login();
+                                //deleteFCM();
+                              },
 
-                          child: const Text(
-                            'Login',
-                            style: TextStyle(fontSize: 25, color: Colors.white),
+                              child: const Text(
+                                'Login',
+                                style: TextStyle(fontSize: 25, color: Colors.white),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -9982,7 +10010,7 @@ class _PendingPageState extends State<PendingPage>
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      "${item['employeeId']} - ${item['id']}",
+                                      "${item['employeeId']} - ${item['createUserRealName']}",
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -10515,7 +10543,7 @@ class _ApprovedPageState extends State<ApprovedPage>
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      "${item['employeeId']} - ${item['id']}",
+                                      "${item['employeeId']} - ${item['createUserRealName']}",
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16),
@@ -10728,7 +10756,7 @@ class _RejectedPageState extends State<RejectedPage>
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                        "${item['employeeId']} - ${item['id']}",
+                                        "${item['employeeId']} - ${item['createUserRealName']}",
                                         style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16),
