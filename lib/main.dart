@@ -4342,183 +4342,63 @@ class HolidayPage extends StatefulWidget {
   State<HolidayPage> createState() => _HolidayPageState();
 }
 
-class _HolidayPageState extends State<HolidayPage> {
+class _HolidayPageState extends State<HolidayPage>
+    with TickerProviderStateMixin {
+  late AnimationController _listController;
+  final Map<int, AnimationController> _cardControllers = {};
+  late Map<int, Animation<double>> _bounceAnimations;
+
+  bool isLoading = true;
   int selectedTabIndex = 0;
+
   List<Map<String, dynamic>> holidays = [];
   List<Map<String, dynamic>> npdList = [];
   List<Map<String, dynamic>> fiftyList = [];
-  bool isLoading = true;
-  Key listKey = UniqueKey();
-  int selectedIndex = -1;
-  int isFront = 0;
 
-  void _swapCards(int index) {
-    setState(() {
-      isFront = index;
-      selectedTabIndex = index;
-      listKey = UniqueKey();
-    });
-  }
+  // cards for Holiday/NPD/50:50
+  final List<Map<String, dynamic>> cards = [
+    {"id": 0, "title": "NPD", "subtitle": "NPD special days"},
+    {"id": 1, "title": "50:50", "subtitle": "Fifty-Fifty schedule"},
+    {"id": 2, "title": "Holiday", "subtitle": "Company declared holidays"},
+  ];
 
   @override
   void initState() {
     super.initState();
+    _listController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _bounceAnimations = <int, Animation<double>>{};
+    for (var card in cards) {
+      final id = card['id'] as int;
+      final controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      );
+      final animation = Tween<double>(begin: 0, end: -15)
+          .chain(CurveTween(curve: Curves.easeOut))
+          .animate(controller)
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            controller.reverse();
+          }
+        });
+      _cardControllers[id] = controller;
+      _bounceAnimations[id] = animation;
+    }
+
     fetchHolidayData();
   }
 
-  Widget _buildSecondCard({
-    required List<Color> colors,
-    required Color textColor,
-  }) {
-    return Container(
-      width: 200,
-      height: 95,
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(0, 6),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: Colors.white,
-            child:
-                Icon(Icons.event_available_rounded, color: colors[0], size: 25),
-          ),
-          SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('NPD',
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFrontCard({
-    required List<Color> colors,
-    required Color textColor,
-  }) {
-    return Container(
-      width: 200,
-      height: 80,
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(0, 6),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: Colors.white,
-            child:
-                Icon(Icons.event_available_rounded, color: colors[0], size: 25),
-          ),
-          SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Hoilday',
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLastCard({
-    required List<Color> colors,
-    required Color textColor,
-  }) {
-    return Container(
-      width: 200,
-      height: 90,
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(0, 6),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: Colors.white,
-            child:
-                Icon(Icons.event_available_rounded, color: colors[0], size: 25),
-          ),
-          SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('50:50',
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<Map<String, dynamic>> get currentList {
-    switch (selectedTabIndex) {
-      case 1:
-        return npdList;
-      case 2:
-        return fiftyList;
-      default:
-        return holidays;
+  @override
+  void dispose() {
+    _listController.dispose();
+    for (final controller in _cardControllers.values) {
+      controller.dispose();
     }
+    super.dispose();
   }
 
   Future<void> fetchHolidayData() async {
@@ -4534,28 +4414,28 @@ class _HolidayPageState extends State<HolidayPage> {
 
     try {
       final response =
-          await http.get(url, headers: {'Authorization': 'Bearer $token'});
+      await http.get(url, headers: {'Authorization': 'Bearer $token'});
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
           holidays = List<Map<String, dynamic>>.from(
             data['holidays'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
           npdList = List<Map<String, dynamic>>.from(
             data['npd'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
           fiftyList = List<Map<String, dynamic>>.from(
             data['fiftyFifties'].map((item) => {
-                  "description": item['description'],
-                  "date": formatDate(item['date']),
-                }),
+              "description": item['description'],
+              "date": formatDate(item['date']),
+            }),
           );
           isLoading = false;
         });
@@ -4576,301 +4456,302 @@ class _HolidayPageState extends State<HolidayPage> {
     }
   }
 
-  List<Widget> _buildCardStack() {
-    List<Widget> cards = [];
+  List<Map<String, dynamic>> get currentList {
+    switch (selectedTabIndex) {
+      case 1:
+        return npdList;
+      case 2:
+        return fiftyList;
+      default:
+        return holidays;
+    }
+  }
 
-    List<int> order = [0, 1, 2]; // 0 = Holiday, 1 = NPD, 2 = 50:50
+  void _onCardTap(int index) {
+    final clickedCard = cards[index];
+    final id = clickedCard['id'] as int;
 
-    // Move selected to end (top-most)
-    order.remove(isFront);
-    order.add(isFront);
+    _cardControllers[id]?.forward();
 
-    // Offsets to prevent overlap
-    const List<double> topOffsets = [40, 20, 0];
-    const List<double> leftOffsets = [100, 50, 0];
-    const List<double> scales = [0.9, 0.95, 1.0];
+    _listController.reset();
+    _listController.forward();
 
-    for (int i = 0; i < order.length; i++) {
-      int index = order[i];
+    setState(() {
+      selectedTabIndex = id;
 
-      // Apply reverse offset logic so top card (isFront) has least offset
-      cards.add(
-        Positioned(
-          top: topOffsets[i],
-          left: leftOffsets[i],
-          child: GestureDetector(
-            onTap: () => _swapCards(index),
-            child: Transform.scale(
-              scale: scales[i],
-              child: _buildCardByIndex(index),
+      final removedCard = cards.removeAt(index);
+      final newIndex = (index + 1) % (cards.length + 1);
+      cards.insert(newIndex, removedCard);
+    });
+  }
+
+  double _getCardScale(int index) {
+    if (index == cards.length - 1) return 1.0;
+    if (index == cards.length - 2) return 0.9;
+    return 0.8;
+  }
+
+  List<Color> _getCardColors(int index) {
+    if (index == cards.length - 1) {
+      return [Colors.deepOrangeAccent, Colors.orangeAccent];
+    } else if (index == cards.length - 2) {
+      return [
+        const Color.fromARGB(255, 245, 139, 107).withOpacity(0.7),
+        const Color.fromARGB(255, 235, 191, 129).withOpacity(0.7)
+      ];
+    } else {
+      return [
+        const Color.fromARGB(255, 245, 139, 107).withOpacity(0.5),
+        const Color.fromARGB(255, 235, 191, 129).withOpacity(0.5)
+      ];
+    }
+  }
+
+  Widget _buildCard(int index, Map<String, dynamic> card) {
+    final id = card['id'] as int;
+    final bool isFrontCard = index == cards.length - 1;
+    final scale = _getCardScale(index);
+    final colors = _getCardColors(index);
+
+    return AnimatedBuilder(
+      animation: _bounceAnimations[id]!,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, _bounceAnimations[id]!.value),
+          child: child,
+        );
+      },
+      child: GestureDetector(
+        onTap: () => _onCardTap(index),
+        child: Transform.scale(
+          scale: scale,
+          child: Container(
+            height: 100,
+            padding: const EdgeInsets.all(16),
+            margin: EdgeInsets.symmetric(
+              horizontal: 20 + (10 * (1 - scale)),
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: colors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26.withOpacity(scale * 0.5),
+                  blurRadius: 10 * scale,
+                  offset: Offset(0, 5 * scale),
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 24 * scale,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.event, color: colors.first, size: 28),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        card["title"]!,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18 * scale,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (isFrontCard)
+                        Text(
+                          card["subtitle"]!,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14 * scale,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      );
-    }
-
-    return cards;
+      ),
+    );
   }
 
-  Widget _buildCardByIndex(int index) {
-    switch (index) {
-      case 0:
-        return _buildFrontCard(
-          colors: [Color(0xFFFFB199), Color(0xFFFFEC61)],
-          textColor: Colors.white,
-        );
-      case 1:
-        return _buildSecondCard(
-          colors: [Color(0xFFFF6B6B), Color(0xFFFF8E8E)],
-          textColor: Colors.white,
-        );
-      case 2:
-        return _buildLastCard(
-          colors: [Color(0xFF84FAB0), Color(0xFF8FD3F4)],
-          textColor: Colors.white,
-        );
-      default:
-        return SizedBox();
-    }
+  Widget _buildListItem(int index, Map<String, dynamic> item) {
+    final slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -0.4),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _listController,
+        curve: Interval(index * 0.1, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    final fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(
+      CurvedAnimation(
+        parent: _listController,
+        curve: Interval(index * 0.1, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    return Column(
+      children: [
+        SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: fadeAnimation,
+            child: ListTile(
+              leading: const Icon(Icons.event_note,
+                  color: Color.fromARGB(255, 154, 16, 6), size: 28),
+              title: Text(
+                item["description"] ?? '',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(item["date"] ?? ''),
+            ),
+          ),
+        ),
+        SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: fadeAnimation,
+            child: const Divider(
+              color: Color.fromARGB(255, 154, 13, 3),
+              thickness: 0.7,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Holiday Details',
-            style: TextStyle(color: Colors.white)),
         backgroundColor: Colors.blueGrey.shade800,
-        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        title: const Text(
+          "Holiday Details",
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        centerTitle: true,
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
-              children: [
-                // const SizedBox(height: 12),
-                // _buildHeaderCards(),
-                // const SizedBox(height: 8),
-                // _buildTableHeader(),
-
-                Padding(
-                  padding: EdgeInsets.all(14),
-                  child: SizedBox(
-                    height: 160,
-                    width: 400,
-                    child: Stack(
-                      children: _buildCardStack(),
-                    ),
-                  ),
-                ),
-
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 500),
-                    switchInCurve: Curves.easeInOut,
-                    key: listKey,
-                    child: _buildAnimatedList(currentList),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildHeaderCards() {
-    return SizedBox(
-      height: 130,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
-          _buildRollCard("Holiday", 0, [Color(0xFFFFB199), Color(0xFFFFEC61)],
-              Colors.black),
-          const SizedBox(width: 12),
-          _buildRollCard(
-              "NPD", 1, [Color(0xFF84FAB0), Color(0xFF8FD3F4)], Colors.black),
-          const SizedBox(width: 12),
-          _buildRollCard(
-              "50:50", 2, [Color(0xFFFF6B6B), Color(0xFFFF8E8E)], Colors.white),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRollCard(
-      String title, int index, List<Color> colors, Color textColor) {
-    bool isSelected = selectedTabIndex == index;
-
-    return GestureDetector(
-      onTap: () {
-        if (!isSelected) {
-          setState(() {
-            selectedTabIndex = index;
-            listKey = UniqueKey();
-          });
-        }
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: 260,
-        height: 110,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: colors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: const Offset(2, 6),
-            )
-          ],
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 25,
-              backgroundColor: Colors.white,
-              child: Icon(Icons.event, color: colors.first, size: 30),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTableHeader() {
-    return Container(
-      color: Colors.blueGrey.shade700,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: const Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Center(
-              child: Text('NAME', style: TextStyle(color: Colors.white)),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 200,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: List.generate(cards.length, (i) {
+                return AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  top: i * 60.0,
+                  left: 0,
+                  right: 0,
+                  child: _buildCard(i, cards[i]),
+                );
+              }),
             ),
           ),
+          const SizedBox(height: 20),
           Expanded(
-            flex: 1,
-            child: Center(
-              child: Text('DATE', style: TextStyle(color: Colors.white)),
+            child: ListView.builder(
+              itemCount: currentList.length,
+              itemBuilder: (context, index) =>
+                  _buildListItem(index, currentList[index]),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildAnimatedList(List<Map<String, dynamic>> list) {
-    return AnimationLimiter(
-      key: ValueKey<int>(selectedTabIndex),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        itemCount: list.length,
-        itemBuilder: (context, index) {
-          final item = list[index];
-          return AnimationConfiguration.staggeredList(
-            position: index,
-            duration: const Duration(milliseconds: 700),
-            child: SlideAnimation(
-              verticalOffset: 50.0,
-              child: FadeInAnimation(
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        blurRadius: 6,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          item['description'] ?? '',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 1,
-                        child: Text(
-                          item['date']!,
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
 }
 
 class ApproverPage extends StatefulWidget {
-  const ApproverPage({super.key});
+  const ApproverPage({Key? key}) : super(key: key);
 
   @override
   State<ApproverPage> createState() => _ApproverPageState();
 }
 
-class _ApproverPageState extends State<ApproverPage> {
+class _ApproverPageState extends State<ApproverPage>
+    with TickerProviderStateMixin {
+  late AnimationController _listController;
+  final Map<int, AnimationController> _cardControllers = {};
+  late Map<int, Animation<double>> _bounceAnimations;
+
+  bool isLoading = true;
+  int selectedTabIndex = 0;
+
   List<List<String>> approverData = [];
   List<List<String>> requestData = [];
-  int selectedIndex = -1;
-  bool isFront = true;
-  bool isApproverSelected = true;
 
-  void _swapCards(String type) {
-    if (type == 'approver') {
-      setState(() {
-        isFront = !isFront;
-        selectedIndex = -1;
-        isApproverSelected = false;
-      });
-    } else {
-      setState(() {
-        isFront = !isFront;
-        selectedIndex = -1;
-        isApproverSelected = true;
-      });
-    }
-  }
+  final List<Map<String, dynamic>> cards = [
+    {"id": 0, "title": "APPROVER", "subtitle": "View approver summary"},
+    {"id": 1, "title": "REQUESTER", "subtitle": "View requester summary"},
+  ];
 
   @override
   void initState() {
     super.initState();
+
+    _listController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    _bounceAnimations = <int, Animation<double>>{};
+    for (var card in cards) {
+      final id = card['id'] as int;
+      final controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      );
+      final animation = Tween<double>(begin: 0, end: -15)
+          .chain(CurveTween(curve: Curves.easeOut))
+          .animate(controller)
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed) controller.reverse();
+        });
+      _cardControllers[id] = controller;
+      _bounceAnimations[id] = animation;
+    }
+
     fetchApproverData();
     fetchRequesterData();
+  }
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    for (final controller in _cardControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> fetchApproverData() async {
@@ -4888,17 +4769,17 @@ class _ApproverPageState extends State<ApproverPage> {
 
     if (response.statusCode == 200) {
       final Map<String, dynamic> jsonMap = jsonDecode(response.body);
-      final Map<String, dynamic> approversMap = jsonMap['approvers'];
+      final Map<String, dynamic> approversMap =
+      Map<String, dynamic>.from(jsonMap['approvers']);
 
-      final List<List<String>> approversList = approversMap.entries
+      final approversList = approversMap.entries
           .map((entry) => [entry.key.toString(), entry.value.toString()])
           .toList();
 
       setState(() {
         approverData = approversList;
+        isLoading = false;
       });
-    } else {
-      throw Exception('Failed to load approver data');
     }
   }
 
@@ -4917,242 +4798,252 @@ class _ApproverPageState extends State<ApproverPage> {
 
     if (response.statusCode == 200) {
       final Map<String, dynamic> jsonMap = jsonDecode(response.body);
-      final Map<String, dynamic> requestersMap = jsonMap['requesters'];
+      final Map<String, dynamic> requestersMap =
+      Map<String, dynamic>.from(jsonMap['requesters']);
 
-      final List<List<String>> requestersList = requestersMap.entries
+      final requestersList = requestersMap.entries
           .map((entry) => [entry.key.toString(), entry.value.toString()])
           .toList();
 
       setState(() {
         requestData = requestersList;
+        isLoading = false;
       });
-    } else {
-      throw Exception('Failed to load requester data');
     }
   }
 
-  Widget _buildFrontCard({
-    required List<Color> colors,
-    required Color textColor,
-  }) {
-    return Container(
-      width: 300,
-      height: 120,
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  List<List<String>> get currentList {
+    switch (selectedTabIndex) {
+      case 0:
+        return approverData;
+      case 1:
+        return requestData;
+      default:
+        return [];
+    }
+  }
+
+  void _onCardTap(int index) {
+    final clickedCard = cards[index];
+    final id = clickedCard['id'] as int;
+
+    _cardControllers[id]?.forward();
+
+    _listController.reset();
+    _listController.forward();
+
+    setState(() {
+      selectedTabIndex = id;
+      final removedCard = cards.removeAt(index);
+      final newIndex = (index + 1) % (cards.length + 1);
+      cards.insert(newIndex, removedCard);
+    });
+  }
+
+  double _getCardScale(int index) {
+    if (index == cards.length - 1) return 1.0;
+    if (index == cards.length - 2) return 0.9;
+    return 0.8;
+  }
+
+  List<Color> _getCardColors(int index) {
+    if (index == cards.length - 1) {
+      return [Colors.indigo, Colors.blueAccent];
+    } else if (index == cards.length - 2) {
+      return [Colors.orangeAccent.withOpacity(0.7), Colors.deepOrangeAccent];
+    } else {
+      return [Colors.grey.shade400, Colors.grey.shade300];
+    }
+  }
+
+  Widget _buildCard(int index, Map<String, dynamic> card) {
+    final id = card['id'] as int;
+    final bool isFrontCard = index == cards.length - 1;
+    final scale = _getCardScale(index);
+    final colors = _getCardColors(index);
+
+    return AnimatedBuilder(
+      animation: _bounceAnimations[id]!,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, _bounceAnimations[id]!.value),
+          child: child,
+        );
+      },
+      child: GestureDetector(
+        onTap: () => _onCardTap(index),
+        child: Transform.scale(
+          scale: scale,
+          child: Container(
+            height: 100,
+            padding: const EdgeInsets.all(16),
+            margin: EdgeInsets.symmetric(
+              horizontal: 20 + (10 * (1 - scale)),
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: colors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26.withOpacity(scale * 0.5),
+                  blurRadius: 10 * scale,
+                  offset: Offset(0, 5 * scale),
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 24 * scale,
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    id == 0 ? Icons.approval_rounded : Icons.request_page,
+                    color: colors.first,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        card["title"]!,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18 * scale,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (isFrontCard)
+                        Text(
+                          card["subtitle"]!,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14 * scale,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(0, 6),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.approval_rounded, color: colors[0], size: 25),
-          ),
-          SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('APPROVER',
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildBackCard({
-    required List<Color> colors,
-    required Color textColor,
-  }) {
-    return Container(
-      width: 300,
-      height: 120,
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: colors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  Widget _buildListItem(int index, List<String> row) {
+    final slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -0.4),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _listController,
+        curve: Interval(index * 0.1, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    final fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(
+      CurvedAnimation(
+        parent: _listController,
+        curve: Interval(index * 0.1, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    return Column(
+      children: [
+        SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: fadeAnimation,
+            child: ListTile(
+              leading: Icon(
+                selectedTabIndex == 0 ? Icons.approval : Icons.request_page,
+                color: Colors.blueAccent,
+                size: 28,
+              ),
+              title: Text(
+                row[0],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(row[1]),
+            ),
+          ),
         ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(0, 6),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.request_page_rounded, color: colors[0], size: 25),
+        SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: fadeAnimation,
+            child: const Divider(
+              color: Colors.grey,
+              thickness: 0.7,
+            ),
           ),
-          SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('REQUESTER',
-                  style: TextStyle(
-                      color: textColor,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.indigo,
+        elevation: 0,
         title: const Text(
-          "Approver & Requestor",
+          "Approver & Requester",
           style: TextStyle(
             color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
           ),
         ),
-        backgroundColor: CupertinoColors.activeBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
+        centerTitle: true,
       ),
-      body: Column(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
         children: [
-          Padding(
-            padding: EdgeInsets.all(14),
-            child: SizedBox(
-              height: 140,
-              width: 350,
-              child: Stack(
-                children: isFront
-                    ? [
-                        // Back card first
-                        AnimatedPositioned(
-                          duration: Duration(milliseconds: 300),
-                          top: 0,
-                          left: 0,
-                          child: GestureDetector(
-                            onTap: () => _swapCards('request'),
-                            child: AnimatedScale(
-                              scale: 0.70,
-                              duration: Duration(milliseconds: 300),
-                              child: _buildBackCard(
-                                colors: [Color(0xFFFF6B6B), Color(0xFFFF8E8E)],
-                                textColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                        // Front card second (drawn on top)
-                        AnimatedPositioned(
-                          duration: Duration(milliseconds: 300),
-                          top: 20,
-                          left: 20,
-                          child: GestureDetector(
-                            onTap: () => _swapCards('approver'),
-                            child: AnimatedScale(
-                              scale: 0.70,
-                              duration: Duration(milliseconds: 300),
-                              child: _buildFrontCard(
-                                colors: [Color(0xFFFFB199), Color(0xFFFFEC61)],
-                                textColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ]
-                    : [
-                        // Reverse order
-                        AnimatedPositioned(
-                          duration: Duration(milliseconds: 300),
-                          top: 20,
-                          left: 20,
-                          child: GestureDetector(
-                            onTap: () => _swapCards('approver'),
-                            child: AnimatedScale(
-                              scale: 0.70,
-                              duration: Duration(milliseconds: 300),
-                              child: _buildFrontCard(
-                                colors: [Color(0xFFFFB199), Color(0xFFFFEC61)],
-                                textColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                        AnimatedPositioned(
-                          duration: Duration(milliseconds: 300),
-                          top: 0,
-                          left: 0,
-                          child: GestureDetector(
-                            onTap: () => _swapCards('request'),
-                            child: AnimatedScale(
-                              scale: 0.70,
-                              duration: Duration(milliseconds: 300),
-                              child: _buildBackCard(
-                                colors: [Color(0xFFFF6B6B), Color(0xFFFF8E8E)],
-                                textColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-              ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 200,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: List.generate(cards.length, (i) {
+                return AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  top: i * 60.0,
+                  left: 0,
+                  right: 0,
+                  child: _buildCard(i, cards[i]),
+                );
+              }),
             ),
           ),
-
-
+          const SizedBox(height: 20),
           Expanded(
-            child: isApproverSelected
-                ? ApproverTable(data: approverData)
-                : RequesterTable(data: requestData),
+            child: ListView.builder(
+              itemCount: currentList.length,
+              itemBuilder: (context, index) =>
+                  _buildListItem(index, currentList[index]),
+            ),
           ),
         ],
       ),
     );
-  }
-}
-
-class ApproverTable extends StatelessWidget {
-  final List<List<String>> data;
-
-  const ApproverTable({super.key, required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return _buildTable("", data);
-  }
-}
-
-class RequesterTable extends StatelessWidget {
-  final List<List<String>> data;
-
-  const RequesterTable({super.key, required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return _buildTable("", data);
   }
 }
 
